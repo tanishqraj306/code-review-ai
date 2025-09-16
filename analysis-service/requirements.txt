@@ -3,3 +3,4 @@ PyGithub
 python-dotenv
 requests
 GitPython
+pyright

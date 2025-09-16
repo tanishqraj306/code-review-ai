@@ -1,10 +1,11 @@
 import os
+import re
 import redis
 import json
 import time
 import shutil
 import git
-import requests
+import subprocess
 from dotenv import load_dotenv
 from github import Github
 
@@ -30,6 +31,50 @@ def connect_to_redis():
         except redis.exceptions.ConnectionError as e:
             print(f"Redis connection failed: {e}. Retrying in 5 seconds...")
             time.sleep(5)
+
+
+def install_dependencies(repo_path):
+    """Checks for and installs dependencies from requirements.txt."""
+    print("Checking for dependencies...")
+    requirements_file = os.path.join(repo_path, "requirements.txt")
+
+    if os.path.exists(requirements_file):
+        print("Found requirements.txt. Installing dependencies...")
+        try:
+            subprocess.run(
+                ["pip", "install", "-r", requirements_file],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            print("Dependencies installed successfully.")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to install dependencies: {e.stderr}")
+    else:
+        print(
+            "No requirements.txt file found in root. Skipping dependency installation."
+        )
+
+
+def run_pyright_analysis(repo_path):
+    """Executes the Pyright language server on the given path"""
+    print("Starting Pyright analysis...")
+    try:
+        command = ["pyright", "--outputjson", repo_path]
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+
+        pyright_output = json.loads(results.stdout)
+        diagnostics = pyright_output.get("generalDiagnostics", [])
+
+        print(f"Pyright analysis complete. Found {len(diagnostics)} diagnostics.")
+        return diagnostics
+    except subprocess.CalledProcessError as e:
+        print(f"Pyright execution failed: {e}")
+        print(f"Stderr: {e.stderr}")
+        return []
+    except json.json.JSONDecodeError:
+        print("Failed to parse Pyright JSON output.")
+        return []
 
 
 def main():
@@ -76,8 +121,14 @@ def main():
             git.Repo.clone_from(auth_clone_url, repo_path, branch=pr_branch)
             print("Repository cloned successfully.")
 
-            cloned_files = os.listdir(repo_path)
-            print(f"Cloned repo contents (first 5): {cloned_files[:5]}")
+            install_dependencies(repo_path)
+
+            diagnostics = run_pyright_analysis(repo_path)
+
+            if diagnostics:
+                print("First diagnostic found:")
+                print(json.dumps(diagnostics[0], indent=2))
+
             print("--- Job Complete ---\n")
 
         except Exception as e:
