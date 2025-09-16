@@ -1,5 +1,5 @@
 import os
-import re
+import requests
 import redis
 import json
 import time
@@ -8,6 +8,7 @@ import git
 import subprocess
 from dotenv import load_dotenv
 from github import Github
+from unidiff import PatchSet
 
 load_dotenv()
 
@@ -31,6 +32,22 @@ def connect_to_redis():
         except redis.exceptions.ConnectionError as e:
             print(f"Redis connection failed: {e}. Retrying in 5 seconds...")
             time.sleep(5)
+
+
+def parse_diff_to_get_added_lines(diff_text):
+    """Parses a diff and returns a dictionary mapping filenames to added line numbers."""
+    patch_set = PatchSet(diff_text)
+    added_lines = {}
+    for patched_file in patch_set:
+        filename = patched_file.path
+        lines_in_file = set()
+        for hunk in patched_file:
+            for line in hunk:
+                if line.is_added:
+                    lines_in_file.add(line.target_line_no)
+        if lines_in_file:
+            added_lines[filename] = lines_in_file
+    return added_lines
 
 
 def install_dependencies(repo_path):
@@ -102,32 +119,49 @@ def main():
                 print(
                     "Payload missing required data (repo_name, clone_url, pr_branch, pr_number)."
                 )
-                print(
-                    f"DEBUG: repo_name={repo_name}, clone_url={clone_url}, pr_branch={pr_branch}, pr_number={pr_number}"
-                )
                 continue
 
             print(f"Processing PR #{pr_number} from {repo_name} (branch: {pr_branch})")
 
+            repo = gh_client.get_repo(repo_name)
+            pr = repo.get_pull(pr_number)
+
+            # Get PR diff and parse it
+            diff_response = requests.get(pr.diff_url)
+            diff_response.raise_for_status()
+            added_lines_map = parse_diff_to_get_added_lines(diff_response.text)
+            print(f"Found added lines in {len(added_lines_map)} files.")
+
+            # Clone repo and install dependencies
             repo_path = os.path.join(
                 CLONE_DIR, repo_name.replace("/", "_"), str(pr_number)
             )
-
             auth_clone_url = clone_url.replace(
                 "https://", f"https://oauth2:{GITHUB_PAT}@"
             )
-
             print(f"Cloning {repo_name} into {repo_path}...")
             git.Repo.clone_from(auth_clone_url, repo_path, branch=pr_branch)
             print("Repository cloned successfully.")
-
             install_dependencies(repo_path)
 
+            # Run LSP analysis
             diagnostics = run_pyright_analysis(repo_path)
 
-            if diagnostics:
-                print("First diagnostic found:")
-                print(json.dumps(diagnostics[0], indent=2))
+            # Filter diagnostics to only those on new lines
+            relevant_diagnostics = []
+            for diag in diagnostics:
+                file_path = diag.get("file")
+                start_line = diag.get("range", {}).get("start", {}).get("line")
+
+                if file_path in added_lines_map:
+                    if (start_line + 1) in added_lines_map[file_path]:
+                        relevant_diagnostics.append(diag)
+            print(
+                f"Found {len(relevant_diagnostics)} relevant diagnostics on new lines."
+            )
+            if relevant_diagnostics:
+                print("Relevant diagnostics:")
+                print(json.dumps(relevant_diagnostics, indent=2))
 
             print("--- Job Complete ---\n")
 

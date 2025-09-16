@@ -4,3 +4,4 @@ python-dotenv
 requests
 GitPython
 pyright
+unidiff
