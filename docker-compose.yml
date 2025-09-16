@@ -1,4 +1,4 @@
-services: 
+services:
   ingestion-service:
     build: ./ingestion-service
     ports:

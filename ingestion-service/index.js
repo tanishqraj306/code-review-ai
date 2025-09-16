@@ -24,7 +24,7 @@ const startServer = async () => {
   app.post('/api/webhook', async (req, res) => {
     const githubEvent = req.headers['x-github-event'];
     console.log(`Webhook received! Event type: ${githubEvent}`);
-    
+
     if (githubEvent === 'pull_request') {
       try {
         const jobData = {
