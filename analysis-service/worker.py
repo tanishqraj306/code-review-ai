@@ -6,6 +6,7 @@ import time
 import shutil
 import git
 import subprocess
+import glob
 import google.generativeai as genai
 from dotenv import load_dotenv
 from github import Github
@@ -55,27 +56,53 @@ def parse_diff_to_get_added_lines(diff_text):
     return added_lines
 
 
-def install_dependencies(repo_path):
-    """Checks for and installs dependencies from requirements.txt."""
-    print("Checking for dependencies...")
-    requirements_file = os.path.join(repo_path, "requirements.txt")
+def detect_language(changed_files):
+    """Detects the primary language of a repository."""
+    print(f"Detecting language from {len(changed_files)} changed files...")
+    language_counts = {"python": 0, "c": 0}
 
-    if os.path.exists(requirements_file):
-        print("Found requirements.txt. Installing dependencies...")
-        try:
-            subprocess.run(
-                ["pip", "install", "-r", requirements_file],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            print("Dependencies installed successfully.")
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to install dependencies: {e.stderr}")
-    else:
-        print(
-            "No requirements.txt file found in root. Skipping dependency installation."
-        )
+    for file_path in changed_files:
+        if file_path.endswith(".py"):
+            language_counts["python"] += 1
+        elif file_path.endswith(("c", ".cpp", ".h", ".hpp")):
+            language_counts["c"] += 1
+
+    if not language_counts or max(language_counts.values()) == 0:
+        return "unknown"
+
+    primary_language = max(language_counts, key=language_counts.get)
+    print(
+        f"Detection complete: Python fiiles={language_counts['python']}, C/C++ files={language_counts['c']}"
+    )
+    return primary_language
+
+
+def install_python_dependencies(repo_path):
+    """
+    Recursively finds all 'requirements.txt' files and installs them.
+    """
+    print("Searching for Python dependencies...")
+    found_requirements = False
+    for root, _, files in os.walk(repo_path):
+        if "requirements.txt" in files:
+            requirements_file = os.path.join(root, "requirements.txt")
+            print(f"Found dependencies file: {requirements_file}. Installing...")
+            found_requirements = True
+            try:
+                subprocess.run(
+                    ["pip", "install", "-r", requirements_file],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                print(f"Successfully installed dependencies from {requirements_file}.")
+            except subprocess.CalledProcessError as e:
+                print(
+                    f"Failed to install dependencies from {requirements_file}: {e.stderr}"
+                )
+
+    if not found_requirements:
+        print("No requirements.txt found anywhere in the repository.")
 
 
 def run_pyright_analysis(repo_path):
@@ -97,6 +124,40 @@ def run_pyright_analysis(repo_path):
     except json.JSONDecodeError:
         print("Failed to parse Pyright JSON output.")
         return []
+
+
+def run_clang_tidy_analysis(repo_path):
+    """Finds all C/C++ files in a project and runs clang-tidy on them."""
+    print("Starting clang-tidy analysis on the full project...")
+    diagnostics = []
+
+    search_path = os.path.join(repo_path, "**")
+    files_to_check = [
+        f
+        for ext in ("*.c", "*.cpp", "*.h", "*.hpp")
+        for f in glob.glob(os.path.join(search_path, ext), recursive=True)
+    ]
+
+    if not files_to_check:
+        print("No C/C++ files found to analyze.")
+        return []
+
+    print(f"Found {len(files_to_check)} C/C++ files to analyze.")
+    try:
+        command = ["clang-tidy"] + files_to_check
+        command.extend(["-p", repo_path])
+
+        result = subprocess.run(command, capture_output=True, text=True)
+
+        if result.stdout:
+            print(f"clang-tidy analysis complete. Raw output generated.")
+        if result.stderr:
+            print(f"clang-tidy reported errors during execution:\n{result.stderr}")
+
+    except Exception as e:
+        print(f"Failed to run clang-tidy: {e}")
+
+    return diagnostics
 
 
 def format_comment_with_ai(diagnostics, diff_text):
@@ -210,7 +271,11 @@ def main():
             diff_response.raise_for_status()
             diff_text = diff_response.text
             added_lines_map = parse_diff_to_get_added_lines(diff_response.text)
+            changed_files = list(added_lines_map.keys())
+
+            language = detect_language(changed_files)
             print(f"Found added lines in {len(added_lines_map)} files.")
+            print(f"Detected primary language of PR: {language}")
 
             # Clone repo and install dependencies
             repo_path = os.path.join(
@@ -227,22 +292,23 @@ def main():
             cloned_repo.git.fetch("origin", f"{pr_refspec}:{local_pr_branch}")
             cloned_repo.git.checkout(local_pr_branch)
             print(f"Successfully checked out code for PR #{pr_number}")
-            install_dependencies(repo_path)
 
-            # Run LSP analysis
-            diagnostics = run_pyright_analysis(repo_path)
-
-            # Filter diagnostics to only those on new lines
+            # Filter diagnostics and run LSP
             relevant_diagnostics = []
-            for diag in diagnostics:
-                file_path = diag.get("file")
-                if file_path.startswith(repo_path):
-                    relative_path = os.path.relpath(file_path, repo_path)
-                    start_line = diag.get("range", {}).get("start", {}).get("line")
+            if language == "python":
+                install_python_dependencies(repo_path)
+                diagnostics = run_pyright_analysis(repo_path)
+                for diag in diagnostics:
+                    file_path = diag.get("file")
+                    if file_path.startswith(repo_path):
+                        relative_path = os.path.relpath(file_path, repo_path)
+                        start_line = diag.get("range", {}).get("start", {}).get("line")
 
-                    if relative_path in added_lines_map:
-                        if (start_line + 1) in added_lines_map[relative_path]:
-                            relevant_diagnostics.append(diag)
+                        if relative_path in added_lines_map:
+                            if (start_line + 1) in added_lines_map[relative_path]:
+                                relevant_diagnostics.append(diag)
+            elif language == "c":
+                diagnostics = run_clang_tidy_analysis(repo_path)
             print(
                 f"Found {len(relevant_diagnostics)} relevant diagnostics on new lines."
             )
