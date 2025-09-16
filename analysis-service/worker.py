@@ -7,6 +7,7 @@ import shutil
 import git
 import subprocess
 import glob
+import re
 import google.generativeai as genai
 from dotenv import load_dotenv
 from github import Github
@@ -126,10 +127,31 @@ def run_pyright_analysis(repo_path):
         return []
 
 
+def parse_clang_tidy_output(output_text, repo_path):
+    """Parses the raw text output of clang-tidy into our standard diagnostic format."""
+    diagnostics = []
+    pattern = re.compile(r"(.+?):(\d+):(\d+):\s+(warning|error):\s+(.+?)\s+\[(.+?)\]")
+
+    for line in output_text.splitlines():
+        match = pattern.match(line)
+        if match:
+            file_path, line_num, _, severity, message, rule = match.groups()
+
+            diagnostics.append(
+                {
+                    "file": os.path.join(repo_path, file_path),
+                    "range": {"start": {"line": int(line_num) - 1, "character": 0}},
+                    "message": message.strip(),
+                    "severity": severity.upper(),
+                    "rule": rule.strip(),
+                }
+            )
+    return diagnostics
+
+
 def run_clang_tidy_analysis(repo_path):
     """Finds all C/C++ files in a project and runs clang-tidy on them."""
     print("Starting clang-tidy analysis on the full project...")
-    diagnostics = []
 
     search_path = os.path.join(repo_path, "**")
     files_to_check = [
@@ -145,19 +167,16 @@ def run_clang_tidy_analysis(repo_path):
     print(f"Found {len(files_to_check)} C/C++ files to analyze.")
     try:
         command = ["clang-tidy"] + files_to_check
-        command.extend(["-p", repo_path])
-
         result = subprocess.run(command, capture_output=True, text=True)
 
-        if result.stdout:
-            print(f"clang-tidy analysis complete. Raw output generated.")
-        if result.stderr:
-            print(f"clang-tidy reported errors during execution:\n{result.stderr}")
+        print("Clang-tidy analysis complete. Parsing output...")
+        diagnostics = parse_clang_tidy_output(result.stdout, repo_path)
+        print(f"Parsed {len(diagnostics)} total diagnostics from clang-tidy.")
+        return diagnostics
 
     except Exception as e:
         print(f"Failed to run clang-tidy: {e}")
-
-    return diagnostics
+        return []
 
 
 def format_comment_with_ai(diagnostics, diff_text):
@@ -222,7 +241,7 @@ def post_review_comment(pr, diagnostics, ai_comment, repo_path):
             latest_commit = pr.get_commits().reversed[0]
             pr.create_review_comment(
                 body=ai_comment,
-                commit_id=latest_commit,
+                commit=latest_commit,
                 path=file_path,
                 line=line_number,
             )
@@ -309,6 +328,15 @@ def main():
                                 relevant_diagnostics.append(diag)
             elif language == "c":
                 diagnostics = run_clang_tidy_analysis(repo_path)
+                for diag in diagnostics:
+                    file_path = diag.get("file", "")
+                    if file_path.startswith(repo_path):
+                        relative_path = os.path.relpath(file_path, repo_path)
+                        start_line = diag.get("range", {}).get("start", {}).get("line")
+
+                        if relative_path in added_lines_map:
+                            if (start_line + 1) in added_lines_map[relative_path]:
+                                relevant_diagnostics.append(diag)
             print(
                 f"Found {len(relevant_diagnostics)} relevant diagnostics on new lines."
             )
