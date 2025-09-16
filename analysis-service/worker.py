@@ -6,6 +6,7 @@ import time
 import shutil
 import git
 import subprocess
+import google.generativeai as genai
 from dotenv import load_dotenv
 from github import Github
 from unidiff import PatchSet
@@ -14,11 +15,15 @@ load_dotenv()
 
 GITHUB_PAT = os.getenv("GITHUB_PAT")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PR_QUEUE_NAME = "pr_queue"
 CLONE_DIR = "/tmp/repos"
 
 gh_client = Github(GITHUB_PAT)
 print("Analysis worker started...")
+genai.configure(api_key=GEMINI_API_KEY)
+ai_model = genai.GenerativeModel("gemini-1.5-flash")
+print("Successfully connected to Github and Google AI!")
 
 
 def connect_to_redis():
@@ -89,9 +94,87 @@ def run_pyright_analysis(repo_path):
         print(f"Pyright execution failed: {e}")
         print(f"Stderr: {e.stderr}")
         return []
-    except json.json.JSONDecodeError:
+    except json.JSONDecodeError:
         print("Failed to parse Pyright JSON output.")
         return []
+
+
+def format_comment_with_ai(diagnostics, diff_text):
+    """Uses an AI to format LSP diagnostic and review code for logic errors."""
+    print("Formatting comment with AI using full code context...")
+
+    diag_summary = "No specific type or syntax errors were found by the linter."
+    if diagnostics:
+        diag_list = []
+        for diag in diagnostics:
+            message = diag.get("message", "No message provided.")
+            rule = diag.get("rule", "general")
+            diag_list.append(f"- Rule `{rule}`: {message}")
+        diag_summary = (
+            "A static analysis tool found the following specific issues:\n"
+            + "\n".join(diag_list)
+        )
+
+    max_diff_length = 4000
+    if len(diff_text) > max_diff_length:
+        diff_text = diff_text[:max_diff_length] + "\n\n (diff truncated due to length)"
+
+    prompt = f"""
+    ou are an expert, friendly, and encouraging code reviewer bot. Your goal is to help developers improve their code.
+
+    A pull request was submitted with the following changes (in diff format):
+    --- CODE DIFF ---
+    {diff_text}
+    --- END CODE DIFF ---
+
+    {diag_summary}
+
+    Please provide a single, concise, and helpful review comment for the pull request. Your comment should:
+    1. Start with a positive and encouraging sentence.
+    2. If there were specific linter issues, briefly and gently explain them.
+    3. Review the provided code diff for potential logic errors, unclear code, performance improvements, or violations of best practices.
+    4. Phrase everything as a helpful suggestion, not a demand. Use a humble and collaborative tone.
+    5. Do not use markdown headers. Structure your feedback as a single, easy-to-read comment.
+    """
+
+    try:
+        response = ai_model.generate_content(prompt)
+        return response.text
+
+    except Exception as e:
+        print(f"AI comment generation failed: {e}")
+        return "I found a few potential issues, but I had trouble summarizing them. Please check the logs for details."
+
+
+def post_review_comment(pr, diagnostics, ai_comment, repo_path):
+    """Posts a single review comment to a pull request."""
+    if not ai_comment:
+        return
+
+    if diagnostics:
+        first_diag = diagnostics[0]
+        file_path = os.path.relpath(first_diag.get("file"), repo_path)
+        line_number = first_diag.get("range", {}).get("start", {}).get("line") + 1
+
+        print(f"Posting in-line comment to {file_path} at line {line_number}...")
+        try:
+            latest_commit = pr.get_commits().reversed[0]
+            pr.create_review_comment(
+                body=ai_comment,
+                commit_id=latest_commit,
+                path=file_path,
+                line=line_number,
+            )
+            print("Successfully posted in-line comment to Github.")
+        except Exception as e:
+            print(f"Failed to post in-line comment to Github: {e}")
+    else:
+        print("Posting general comment on the PR...")
+        try:
+            pr.create_issue_comment(ai_comment)
+            print("Successfully posted general comment to Github.")
+        except Exception as e:
+            print(f"Failed to post general comment to Github: {e}")
 
 
 def main():
@@ -125,6 +208,7 @@ def main():
             # Get PR diff and parse it
             diff_response = requests.get(pr.diff_url)
             diff_response.raise_for_status()
+            diff_text = diff_response.text
             added_lines_map = parse_diff_to_get_added_lines(diff_response.text)
             print(f"Found added lines in {len(added_lines_map)} files.")
 
@@ -165,6 +249,10 @@ def main():
             if relevant_diagnostics:
                 print("Relevant diagnostics:")
                 print(json.dumps(relevant_diagnostics, indent=2))
+
+            if relevant_diagnostics or diff_text:
+                ai_comment = format_comment_with_ai(relevant_diagnostics, diff_text)
+                post_review_comment(pr, relevant_diagnostics, ai_comment, repo_path)
 
             print("--- Job Complete ---\n")
 
