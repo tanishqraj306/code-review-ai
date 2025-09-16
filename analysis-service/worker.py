@@ -80,7 +80,7 @@ def run_pyright_analysis(repo_path):
         command = ["pyright", "--outputjson", repo_path]
         result = subprocess.run(command, capture_output=True, text=True, check=True)
 
-        pyright_output = json.loads(results.stdout)
+        pyright_output = json.loads(result.stdout)
         diagnostics = pyright_output.get("generalDiagnostics", [])
 
         print(f"Pyright analysis complete. Found {len(diagnostics)} diagnostics.")
@@ -107,21 +107,17 @@ def main():
             print("\n--- ✅ Job Received ---")
 
             payload = job_data.get("payload", {})
-            pr_data = payload.get("pull_request", {})
             repo_data = payload.get("repository", {})
 
             repo_name = repo_data.get("full_name")
             clone_url = repo_data.get("clone_url")
-            pr_branch = pr_data.get("head", {}).get("ref")
             pr_number = payload.get("number")
 
-            if not all([repo_name, clone_url, pr_branch, pr_number]):
-                print(
-                    "Payload missing required data (repo_name, clone_url, pr_branch, pr_number)."
-                )
+            if not all([repo_name, clone_url, pr_number]):
+                print("Payload missing required data.")
                 continue
 
-            print(f"Processing PR #{pr_number} from {repo_name} (branch: {pr_branch})")
+            print(f"Processing PR #{pr_number} from {repo_name}")
 
             repo = gh_client.get_repo(repo_name)
             pr = repo.get_pull(pr_number)
@@ -139,9 +135,14 @@ def main():
             auth_clone_url = clone_url.replace(
                 "https://", f"https://oauth2:{GITHUB_PAT}@"
             )
-            print(f"Cloning {repo_name} into {repo_path}...")
-            git.Repo.clone_from(auth_clone_url, repo_path, branch=pr_branch)
-            print("Repository cloned successfully.")
+            print(f"Cloning default branch of {repo_name}...")
+            cloned_repo = git.Repo.clone_from(auth_clone_url, repo_path)
+            pr_refspec = f"refs/pull/{pr_number}/head"
+            local_pr_branch = f"pr-{pr_number}"
+            print(f"Fetching PR refspec: {pr_refspec}...")
+            cloned_repo.git.fetch("origin", f"{pr_refspec}:{local_pr_branch}")
+            cloned_repo.git.checkout(local_pr_branch)
+            print(f"Successfully checked out code for PR #{pr_number}")
             install_dependencies(repo_path)
 
             # Run LSP analysis
@@ -151,11 +152,13 @@ def main():
             relevant_diagnostics = []
             for diag in diagnostics:
                 file_path = diag.get("file")
-                start_line = diag.get("range", {}).get("start", {}).get("line")
+                if file_path.startswith(repo_path):
+                    relative_path = os.path.relpath(file_path, repo_path)
+                    start_line = diag.get("range", {}).get("start", {}).get("line")
 
-                if file_path in added_lines_map:
-                    if (start_line + 1) in added_lines_map[file_path]:
-                        relevant_diagnostics.append(diag)
+                    if relative_path in added_lines_map:
+                        if (start_line + 1) in added_lines_map[relative_path]:
+                            relevant_diagnostics.append(diag)
             print(
                 f"Found {len(relevant_diagnostics)} relevant diagnostics on new lines."
             )
