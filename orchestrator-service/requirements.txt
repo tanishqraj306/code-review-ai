@@ -1,3 +1,5 @@
 pymongo
 python-dotenv
 apscheduler
+PyGithub
+redis
