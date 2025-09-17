@@ -11,7 +11,9 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "dotenv": "^17.2.2",
     "express": "^5.1.0",
+    "mongodb": "^6.19.0",
     "redis": "^5.8.2"
   }
 }

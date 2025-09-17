@@ -23,6 +23,15 @@ services:
     env_file:
       - .env
 
+  orchestrator-service:
+    build: ./orchestrator-service
+    volumes:
+      - ./orchestrator-service:/app
+    depends_on:
+      - redis
+    env_file:
+      - .env
+
   redis:
     image: "redis:alpine"
     ports:
