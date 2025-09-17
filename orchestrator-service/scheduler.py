@@ -1,4 +1,5 @@
 import os
+import time
 import json
 from datetime import datetime, timezone
 from pymongo import MongoClient
@@ -19,16 +20,30 @@ repositores_collection = db["repositories"]
 processed_prs_collection = db["processed_prs"]
 
 gh_client = Github(GITHUB_PAT)
-redis_client = redis.Redis.from_url(REDIS_URL)
 
 PR_QUEUE_NAME = "pr_queue"
+
+
+def connect_to_redis():
+    """Attempt to connect to Redis, with retries."""
+    while True:
+        try:
+            r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+            r.ping()
+            print("Successfully connected to Redis!")
+            return r
+        except redis.exceptions.ConnectionError as e:
+            print(f"Redis connection failed: {e}. Retrying in 5 seconds...")
+            time.sleep(5)
 
 
 def check_repositories():
     """Fetches PRs for active repos and queues them for analysis."""
     print(
-        f"\nScheduler running at {datetime.utcnow()} UTC: Checking for repositories..."
+        f"\nScheduler running at {datetime.now(timezone.utc)} UTC: Checking for repositories..."
     )
+
+    redis_client = connect_to_redis()
 
     active_repos = repositores_collection.find({"status": "active"})
 
