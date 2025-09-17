@@ -69,13 +69,15 @@ def check_repositories():
                 if is_processed:
                     continue
 
-                job_payload = {
+                github_payload = {
                     "number": pr.number,
                     "repository": {"full_name": full_name, "clone_url": repo.clone_url},
                     "pull_request": {"head": {"ref": pr.head.ref}},
                 }
 
-                redis_client.lpush(PR_QUEUE_NAME, json.dumps(job_payload))
+                job_to_queue = {"eventType": "pull_request", "payload": github_payload}
+
+                redis_client.lpush(PR_QUEUE_NAME, json.dumps(job_to_queue))
                 queued_count += 1
 
                 processed_prs_collection.insert_one(
