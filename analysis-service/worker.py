@@ -24,7 +24,7 @@ CLONE_DIR = "/tmp/repos"
 gh_client = Github(GITHUB_PAT)
 print("Analysis worker started...")
 genai.configure(api_key=GEMINI_API_KEY)
-ai_model = genai.GenerativeModel("gemini-1.5-flash")
+ai_model = genai.GenerativeModel("gemini-flash-latest")
 print("Successfully connected to Github and Google AI!")
 
 
