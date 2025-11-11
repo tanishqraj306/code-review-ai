@@ -38,3 +38,13 @@ services:
     image: "redis:alpine"
     ports:
       - "6379:6379"
+  frontend-service:
+    build: ./frontend-service
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend-service:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+    depends_on:
+      - ingestion-service
