@@ -1,22 +1,110 @@
-
+const axios = require('axios');
+const cookieParser = require('cookie-parser');
 const express = require('express');
 const { MongoClient } = require('mongodb');
 const { createClient } = require('redis');
 require('dotenv').config();
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGO_ATLAS_URI = process.env.MONGO_ATLAS_URI;
+const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
+const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET;
 
 let db;
 
 app.use(express.json());
+app.use(cookieParser());
 
-const redisClient = createClient({
-  url: process.env.REDIS_URL
+app.get('/api/auth/github', (req, res) => {
+  const url = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=repo user:email`;
+  res.redirect(url);
 });
 
-redisClient.on('error', (err) => console.log('Redis Client Error', err));
+app.get('/api/auth/callback', async (req, res) => {
+  const { code } = req.query;
+
+  if (!code) {
+    return res.status(400).send('Error: No code provided');
+  }
+
+  try {
+    const tokenResponse = await axios.post(
+      'https://github.com/login/oauth/access_token',
+      {
+        client_id: GITHUB_CLIENT_ID,
+        client_secret: GITHUB_CLIENT_SECRET,
+        code,
+      },
+      {
+        headers: { Accept: 'application/json' },
+      }
+    );
+
+    const accessToken = tokenResponse.data.access_token;
+    if (!accessToken) {
+      throw new Error('Failed to get access token');
+    }
+
+    const userResponse = await axios.get('https://api.github.com/user', {
+      headers: { Authorization: `token ${accessToken}` },
+    });
+
+    const githubUser = userResponse.data;
+
+    const userPayload = {
+      githubId: githubUser.id,
+      username: githubUser.login,
+      avatarUrl: githubUser.avatar_url,
+      accessToken,
+      lastLogin: new Date(),
+    };
+
+    const result = await db.collection('users').findOneAndUpdate(
+      { githubId: githubUser.id },
+      { $set: userPayload },
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    const user = result;
+    console.log(`User ${user.username} logged in.`);
+
+    const sessionToken = jwt.sign(
+      { userId: user._id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('auth_token', sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+
+    res.redirect('http://localhost:5173/dashboard');
+  } catch (error) {
+    console.error('Auth callback error:', error.message);
+    res.status(500).send('Authentication failed');
+  }
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const token = req.cookies.auth_token;
+  if (!token) {
+    return res.status(401).send({ message: "Not Authenticated" });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    res.send({ userId: payload.userId, username: payload.username });
+  } catch (error) {
+    res.status(401).send({ message: "Invalid token" });
+  }
+});
+
 app.post('/api/repositories', async (req, res) => {
   const { repo_url } = req.body;
   if (!repo_url) {
@@ -80,6 +168,8 @@ app.post('/api/webhook', async (req, res) => {
 
 const startServer = async () => {
   try {
+    redisClient = createClient({ url: process.env.REDIS_URL });
+    redisClient.on('error', (err) => console.log('Redis Client Error', err));
     await redisClient.connect();
     console.log('Successfully connected to Redis!');
 
