@@ -18,6 +18,21 @@ let db;
 app.use(express.json());
 app.use(cookieParser());
 
+const protectRoute = (req, res, next) => {
+  const token = req.cookies.auth_token;
+  if (!token) {
+    return res.status(401).send({ message: "Not Authenticated" });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = payload;
+    next();
+  } catch (error) {
+    res.status(401).send({ message: "Invalid token" });
+  }
+};
+
 app.get('/api/auth/github', (req, res) => {
   const url = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=repo user:email`;
   res.redirect(url);
@@ -105,7 +120,7 @@ app.get('/api/auth/me', (req, res) => {
   }
 });
 
-app.post('/api/repositories', async (req, res) => {
+app.post('/api/repositories', protectRoute, async (req, res) => {
   const { repo_url } = req.body;
   if (!repo_url) {
     return res.status(400).send({ message: 'Repository URL is required.' })
@@ -116,6 +131,7 @@ app.post('/api/repositories', async (req, res) => {
     const fullName = urlParts.pathname.slice(1);
 
     const repository = {
+      userId: req.user.userId,
       full_name: fullName,
       url: repo_url,
       status: 'active',
@@ -124,25 +140,27 @@ app.post('/api/repositories', async (req, res) => {
     };
 
     const result = await db.collection('repositories').updateOne(
-      { full_name: fullName },
+      { full_name: fullName, userId: req.user.userId },
       { $set: repository },
       { upsert: true }
     );
 
-    console.log(`Successfully added/updated repository: ${fullName}`);
-    res.status(201).send({ message: 'Repository added successfully.', data: repository });
+    const newRepo = await db.collection('repositories').findOne({ full_name: fullName, userId: req.user.userId });
+
+    console.log(`User ${req.user.username} added/updated repository: ${fullName}`);
+    res.status(201).send({ message: 'Repository added successfully.', data: newRepo });
   } catch (error) {
     console.error('Failed to add repository:', error);
     res.status(500).send({ message: 'Internal Server Error' });
   }
 });
 
-app.get('/api/repositories', async (req, res) => {
+app.get('/api/repositories', protectRoute, async (req, res) => {
   try {
-    const repos = await db.collection('repositories').find().toArray();
+    const repos = await db.collection('repositories').find({ userId: req.user.userId }).toArray();
     res.status(200).send(repos);
   } catch (error) {
-    console.error('Failed to fethc repositories:', error);
+    console.error('Failed to fetch repositories:', error);
     res.status(500).send({ message: 'Internal Server Error' });
   }
 });

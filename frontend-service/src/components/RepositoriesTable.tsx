@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/table"
 
 import { Badge } from "@/components/ui/badge"
-import { useEffect, useState } from "react"
 
 export interface Repository {
   _id: string;
@@ -48,26 +47,12 @@ export const columns: ColumnDef<Repository>[] = [
   },
 ]
 
-export function RepositoriesTable() {
-  const [data, setData] = useState<Repository[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+interface RepositoriesTableProps {
+  data: Repository[];
+  isLoading: boolean;
+}
 
-  useEffect(() => {
-    async function fetchData() {
-      setIsLoading(true);
-      try {
-        const response = await fetch("/apii/repositories");
-        const repos = await response.json();
-        setData(repos);
-      } catch (error) {
-        console.error("Failed to fetch repositories:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchData();
-  }, []);
-
+export function RepositoriesTable({ data, isLoading }: RepositoriesTableProps) {
   const table = useReactTable({
     data,
     columns,

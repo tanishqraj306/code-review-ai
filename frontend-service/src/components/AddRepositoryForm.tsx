@@ -3,7 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus } from "lucide-react";
 
-export function AddRepositoryForm() {
+interface AddRepositoryFormProps {
+  onRepoAdded: () => void;
+}
+
+export function AddRepositoryForm({ onRepoAdded }: AddRepositoryFormProps) {
   const [repoUrl, setRepoUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState("");
@@ -29,6 +33,7 @@ export function AddRepositoryForm() {
       const result = await response.json();
       setMessage(`Successfully added: ${result.data.full_name}`);
       setRepoUrl("");
+      onRepoAdded();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "An unknown error occurred");
     } finally {
