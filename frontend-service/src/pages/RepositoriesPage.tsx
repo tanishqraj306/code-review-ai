@@ -1,4 +1,5 @@
 import { AddRepositoryForm } from "../components/AddRepositoryForm";
+import { RepositoriesTable } from "../components/RepositoriesTable";
 
 export function RepositoriesPage() {
   return (
@@ -16,8 +17,8 @@ export function RepositoriesPage() {
       </div>
       <div>
         <h2 className="text-lg font-semibold mb-4">Monitored Repositories</h2>
-        <p>A list of your monitored repositories will appear here</p>
+        <RepositoriesTable />
       </div>
     </div>
-  )
+  );
 }

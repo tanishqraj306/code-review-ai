@@ -137,6 +137,16 @@ app.post('/api/repositories', async (req, res) => {
   }
 });
 
+app.get('/api/repositories', async (req, res) => {
+  try {
+    const repos = await db.collection('repositories').find().toArray();
+    res.status(200).send(repos);
+  } catch (error) {
+    console.error('Failed to fethc repositories:', error);
+    res.status(500).send({ message: 'Internal Server Error' });
+  }
+});
+
 app.get('/', (req, res) => {
   res.send('Ingestion service is running and connected to Redis!');
 });
