@@ -1,7 +1,9 @@
-// src/pages/DashboardPage.tsx
-import { StatCard } from "@/components/StatCard";
-import { PrChart } from "@/components/PrChart"; // <-- Import the chart
-
+import { StatCard } from "@/components/StatCard"
+import { PrChart } from "@/components/PrChart"
+import { RecentReviewsTable } from "@/components/RecentReviewsTable" // <-- Import Table
+import { Button } from "@/components/ui/button" // <-- Import Button
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs" // <-- Import Tabs
+import { ListFilter, Plus } from "lucide-react"
 // (Mock data for stats remains the same)
 const stats = [
   {
@@ -51,10 +53,35 @@ export function DashboardPage() {
       </div>
 
       {/* Area for the chart */}
-      <div>
+      <div className="mb-6">
         <PrChart />
       </div>
+      {/* --- Data Table Section --- */}
+      <div>
+        {/* Tabs and Buttons */}
+        <div className="flex justify-between items-center mb-4">
+          <Tabs defaultValue="recent" className="w-full">
+            <TabsList>
+              <TabsTrigger value="recent">Recent Reviews</TabsTrigger>
+              <TabsTrigger value="pending">Pending</TabsTrigger>
+              <TabsTrigger value="all">All</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <div className="flex gap-2">
+            <Button variant="outline">
+              <ListFilter className="h-4 w-4 mr-2" />
+              Customize Columns
+            </Button>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Repository
+            </Button>
+          </div>
+        </div>
 
+        {/* Table */}
+        <RecentReviewsTable />
+      </div>
       {/* The data table will go here next */}
     </div>
   );
