@@ -1,9 +1,10 @@
-const { default: axios } = require('axios');
+const axios = require('axios');
 const cookieParser = require('cookie-parser');
 const express = require('express');
 const { MongoClient } = require('mongodb');
 const { createClient } = require('redis');
 require('dotenv').config();
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,7 +19,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.get('/api/auth/github', (req, res) => {
-  const url = `https://github.com/login/oauth/authotize?client_id=${GITHUB_CLIENT_ID}&scope=repo,user:email`;
+  const url = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=repo user:email`;
   res.redirect(url);
 });
 
@@ -67,7 +68,7 @@ app.get('/api/auth/callback', async (req, res) => {
       { upsert: true, returnDocument: 'after' }
     );
 
-    const user = result.value;
+    const user = result;
     console.log(`User ${user.username} logged in.`);
 
     const sessionToken = jwt.sign(
@@ -87,6 +88,20 @@ app.get('/api/auth/callback', async (req, res) => {
   } catch (error) {
     console.error('Auth callback error:', error.message);
     res.status(500).send('Authentication failed');
+  }
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const token = req.cookies.auth_token;
+  if (!token) {
+    return res.status(401).send({ message: "Not Authenticated" });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    res.send({ userId: payload.userId, username: payload.username });
+  } catch (error) {
+    res.status(401).send({ message: "Invalid token" });
   }
 });
 
