@@ -1,5 +1,8 @@
+// src/pages/DashboardPage.tsx
 import { StatCard } from "@/components/StatCard";
+import { PrChart } from "@/components/PrChart"; // <-- Import the chart
 
+// (Mock data for stats remains the same)
 const stats = [
   {
     title: "Total Repositories",
@@ -34,6 +37,7 @@ export function DashboardPage() {
         <h1 className="text-3xl font-bold">Dashboard</h1>
       </div>
 
+      {/* Grid for the statistic cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 my-6">
         {stats.map((stat) => (
           <StatCard
@@ -46,6 +50,12 @@ export function DashboardPage() {
         ))}
       </div>
 
+      {/* Area for the chart */}
+      <div>
+        <PrChart />
+      </div>
+
+      {/* The data table will go here next */}
     </div>
   );
 }
