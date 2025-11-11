@@ -193,6 +193,16 @@ app.post('/api/webhook', async (req, res) => {
   }
 });
 
+app.post('/api/auth/logout', (req, res) => {
+  res.cookie('auth_token', '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    expires: new Date(0),
+    path: '/',
+  });
+  res.status(200).send({ message: 'Logged out successfully' });
+});
+
 
 const startServer = async () => {
   try {
