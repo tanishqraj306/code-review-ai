@@ -1,5 +1,4 @@
-// src/components/RecentReviewsTable.tsx
-"use client" // Required for TanStack Table hooks
+"use client"
 
 import {
   type ColumnDef,
@@ -17,76 +16,67 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-// Mock data type and data
+import { Badge } from "@/components/ui/badge"
+
 export type Review = {
-  id: string
-  pullRequest: string
-  status: "Reviewed" | "Pending" | "Error"
-  reviewer: string
-  issuesFound: number
+  _id: string
+  repo_name: string
+  pr_number: number
+  issues_found: number
+  language: string
+  analyzed_at: string
 }
 
-export const data: Review[] = [
-  {
-    id: "pr-1",
-    pullRequest: "feat: Add new user authentication flow",
-    status: "Reviewed",
-    reviewer: "AI Bot",
-    issuesFound: 3,
-  },
-  {
-    id: "pr-2",
-    pullRequest: "fix: Correct critical payment bug",
-    status: "Reviewed",
-    reviewer: "AI Bot",
-    issuesFound: 1,
-  },
-  {
-    id: "pr-3",
-    pullRequest: "docs: Update README.md",
-    status: "Pending",
-    reviewer: "AI Bot",
-    issuesFound: 0,
-  },
-  {
-    id: "pr-4",
-    pullRequest: "refactor: Simplify database service",
-    status: "Reviewed",
-    reviewer: "AI Bot",
-    issuesFound: 5,
-  },
-]
-
-// Define the columns for the table
 export const columns: ColumnDef<Review>[] = [
   {
-    accessorKey: "pullRequest",
-    header: "Pull Request",
+    header: "Repository / PR",
+    accessorFn: (row) => `${row.repo_name} #${row.pr_number}`,
   },
   {
-    accessorKey: "status",
-    header: "Status",
+    accessorKey: "language",
+    cell: ({ row }) => (
+      <Badge variant="outline" className="capitalize">
+        {row.getValue("language")}
+      </Badge>
+    ),
   },
   {
-    accessorKey: "reviewer",
-    header: "Reviewer",
-  },
-  {
-    accessorKey: "issuesFound",
+    accessorKey: "issues_found",
     header: "Issues Found",
+    cell: ({ row }) => {
+      const issues = row.getValue("issues_found") as number;
+      return (
+        <span className={issues > 0 ? "text-red-500 font-medium" : "text-green-500"}>
+          {issues} issues
+        </span>
+      )
+    },
+  },
+  {
+    accessorKey: "analyzed_at",
+    header: "Date",
+    cell: ({ row }) => new Date(row.getValue("analyzed_at")).toLocaleDateString(),
   },
 ]
 
-// The main table component
-export function RecentReviewsTable() {
+interface RecentReviewsTableProps {
+  data: Review[];
+  isLoading: boolean;
+}
+
+export function RecentReviewsTable({ data, isLoading }: RecentReviewsTableProps) {
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
   })
 
+  if (isLoading) {
+    return <div className="text-sm text-muted-foreground">Loading recent reviews...</div>
+  }
+
   return (
-    <div className="rounded-md border">
+    <div className="w-full rounded-md border">
       <Table>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
@@ -95,8 +85,7 @@ export function RecentReviewsTable() {
                 return (
                   <TableHead key={header.id}>
                     {header.isPlaceholder
-                      ? null
-                      : flexRender(
+                      ? null : flexRender(
                         header.column.columnDef.header,
                         header.getContext()
                       )}
@@ -123,7 +112,7 @@ export function RecentReviewsTable() {
           ) : (
             <TableRow>
               <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+                No reviews found.
               </TableCell>
             </TableRow>
           )}
