@@ -1,7 +1,7 @@
 const axios = require('axios');
 const cookieParser = require('cookie-parser');
 const express = require('express');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const { createClient } = require('redis');
 require('dotenv').config();
 const jwt = require('jsonwebtoken');
@@ -236,6 +236,29 @@ app.get('/api/dashboard/reviews', protectRoute, async (req, res) => {
     res.status(500).send({ message: "Internal Server Error" });
   }
 })
+
+app.get('/api/reviews/:id', protectRoute, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid review ID" });
+    }
+
+    const review = await db.collection('reviews').findOne({
+      _id: new ObjectId(id)
+    });
+
+    if (!review) {
+      return res.status(404).send({ message: "Review not found" });
+    }
+
+    res.send(review);
+  } catch (error) {
+    console.error('Failed to fetch review details:', error);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
 
 app.post('/api/auth/logout', (req, res) => {
   res.cookie('auth_token', '', {
