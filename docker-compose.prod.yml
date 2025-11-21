@@ -31,3 +31,10 @@ services:
     restart: always
     depends_on:
       - ingestion-service
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
