@@ -1,5 +1,5 @@
 // src/components/AppSidebar.tsx
-import { LayoutDashboard, Github, Settings, ChevronDown } from "lucide-react";
+import { LayoutDashboard, Github, Settings, ChevronDown, List } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -18,9 +18,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 
 // --- Menu Items ---
 const menuItems = [
@@ -30,9 +31,9 @@ const menuItems = [
 ];
 
 export function AppSidebar() {
+  const { user, logout } = useAuth();
   return (
     <Sidebar>
-      {/* --- Header: App Name --- */}
       <SidebarHeader className="border-b p-2">
         <Button variant="ghost" className="flex w-full items-center justify-start gap-2 text-lg font-semibold">
           <Avatar className="h-6 w-6">
@@ -42,7 +43,6 @@ export function AppSidebar() {
         </Button>
       </SidebarHeader>
 
-      {/* --- Content: Nav Groups --- */}
       <SidebarContent className="flex-grow">
         <SidebarGroup>
           <SidebarGroupLabel>Menu</SidebarGroupLabel>
@@ -63,21 +63,22 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* --- Footer: User Profile & Theme --- */}
       <SidebarFooter className="border-t p-2">
         <div className="flex items-center justify-between">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="flex items-center gap-2">
+              <Button variant="ghost" className="flex items-center gap-2 px-2 w-full justify-start">
                 <Avatar className="h-6 w-6">
-                  <AvatarFallback>U</AvatarFallback>
+                  {/* Use real avatar URL */}
+                  <AvatarImage src={user?.avatarUrl} />
+                  <AvatarFallback>{user?.username?.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
-                <span className="truncate">User Profile</span>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                <span className="truncate max-w-[80px]">{user?.username}</span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground ml-auto" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" className="w-56">
-              <DropdownMenuItem>Sign Out</DropdownMenuItem>
+              <DropdownMenuItem onClick={logout}>Sign Out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <ThemeToggle />
