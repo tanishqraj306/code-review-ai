@@ -262,7 +262,7 @@ app.get('/api/reviews/:id', protectRoute, async (req, res) => {
 
 app.get('/api/reviews', protectRoute, async (req, res) => {
   try {
-    const reviews = awaitdb.collection('reviews')
+    const reviews = await db.collection('reviews')
       .find()
       .sort({ analyzed_at: -1 })
       .toArray();

@@ -1,5 +1,4 @@
-// src/components/AppSidebar.tsx
-import { LayoutDashboard, Github, Settings, ChevronDown } from "lucide-react";
+import { LayoutDashboard, Github, Settings, ChevronDown, List } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -22,17 +21,16 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 
-// --- Menu Items ---
 const menuItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Repositories", url: "/repositories", icon: Github },
+  { title: "History", url: "/reviews", icon: List },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
 export function AppSidebar() {
   return (
     <Sidebar>
-      {/* --- Header: App Name --- */}
       <SidebarHeader className="border-b p-2">
         <Button variant="ghost" className="flex w-full items-center justify-start gap-2 text-lg font-semibold">
           <Avatar className="h-6 w-6">
@@ -42,7 +40,6 @@ export function AppSidebar() {
         </Button>
       </SidebarHeader>
 
-      {/* --- Content: Nav Groups --- */}
       <SidebarContent className="flex-grow">
         <SidebarGroup>
           <SidebarGroupLabel>Menu</SidebarGroupLabel>
@@ -63,7 +60,6 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* --- Footer: User Profile & Theme --- */}
       <SidebarFooter className="border-t p-2">
         <div className="flex items-center justify-between">
           <DropdownMenu>
