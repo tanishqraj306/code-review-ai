@@ -18,7 +18,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -35,9 +34,6 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="border-b p-2">
         <Button variant="ghost" className="flex w-full items-center justify-start gap-2 text-lg font-semibold">
-          <Avatar className="h-6 w-6">
-            <AvatarFallback>AI</AvatarFallback>
-          </Avatar>
           <span>AI Code Review</span>
         </Button>
       </SidebarHeader>

@@ -1,6 +1,6 @@
+import { useState, useEffect, useCallback } from "react";
 import { AddRepositoryForm } from "@/components/AddRepositoryForm";
 import { RepositoriesTable, type Repository } from "@/components/RepositoriesTable";
-import { useState, useEffect, useCallback } from "react";
 
 export function RepositoriesPage() {
   const [data, setData] = useState<Repository[]>([]);
@@ -10,10 +10,13 @@ export function RepositoriesPage() {
     setIsLoading(true);
     try {
       const response = await fetch("/api/repositories");
+      if (!response.ok) {
+        throw new Error("Failed to fetch repositories");
+      }
       const repos = await response.json();
       setData(repos);
     } catch (error) {
-      console.error("Failed to fetch repositories:", error);
+      console.error("Error fetching repositories:", error);
     } finally {
       setIsLoading(false);
     }
@@ -34,14 +37,17 @@ export function RepositoriesPage() {
         <p className="text-sm text-muted-foreground mb-4">
           Paste the full URL of the GitHub repository you want to monitor.
         </p>
-        {/* Pass the refresh function down to the form */}
         <AddRepositoryForm onRepoAdded={fetchRepositories} />
       </div>
 
       <div>
         <h2 className="text-lg font-semibold mb-4">Monitored Repositories</h2>
-        {/* Pass the data and loading state down to the table */}
-        <RepositoriesTable data={data} isLoading={isLoading} />
+        {/* We pass fetchRepositories as 'onDataChange' so the list updates immediately after deleting */}
+        <RepositoriesTable
+          data={data}
+          isLoading={isLoading}
+          onDataChange={fetchRepositories}
+        />
       </div>
     </div>
   );

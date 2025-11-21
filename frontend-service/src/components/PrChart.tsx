@@ -11,8 +11,8 @@ import {
   CardHeader,
   CardTitle,
   CardContent,
+  CardDescription,
 } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface PrChartProps {
   data: { date: string; prs: number }[];
@@ -34,20 +34,11 @@ export function PrChart({ data }: PrChartProps) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <div>
-          <CardTitle>PRs Reviewed</CardTitle>
-        </div>
-        <Tabs defaultValue="7days">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="3months">Last 3 months</TabsTrigger>
-            <TabsTrigger value="30days">Last 30 days</TabsTrigger>
-            <TabsTrigger value="7days">Last 7 days</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <CardTitle>PRs Reviewed</CardTitle>
+        <CardDescription>Activity over the last 30 days</CardDescription>
       </CardHeader>
 
       <CardContent className="px-2 pt-4">
-        {/* 4. We give the ChartContainer the height */}
         <ChartContainer config={chartConfig} className="h-[200px] w-full">
           <AreaChart
             accessibilityLayer
