@@ -193,6 +193,50 @@ app.post('/api/webhook', async (req, res) => {
   }
 });
 
+app.get('/api/dashboard/stats', protectRoute, async (req, res) => {
+  try {
+    const totalRepos = await db.collection('repositories').countDocuments({
+      userId: req.user.userId
+    });
+
+    const reviewStats = await db.collection('reviews').aggregate([
+      {
+        $group: {
+          _id: null,
+          totalReviews: { $sum: 1 },
+          totalIssues: { $sum: "$issues_found" }
+        }
+      }
+    ]).toArray();
+    const stats = reviewStats[0] || { totalReviews: 0, totalIssues: 0 };
+
+    res.send({
+      totalRepos,
+      totalReviews: stats.totalReviews,
+      totalIssues: stats.totalIssues,
+      linterErrors: Math.floor(stats.totalIssues * 0.8)
+    });
+  } catch (error) {
+    console.error('Failed to fetch dashboard stats:', error);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+})
+
+app.get('/api/dashboard/reviews', protectRoute, async (req, res) => {
+  try {
+    const recentReviews = await db.collection('reviews')
+      .find()
+      .sort({ analyzed_at: -1 })
+      .limit(10)
+      .toArray();
+
+    res.send(recentReviews);
+  } catch (error) {
+    console.error('Failed to fetch recent review:', error);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+})
+
 app.post('/api/auth/logout', (req, res) => {
   res.cookie('auth_token', '', {
     httpOnly: true,
