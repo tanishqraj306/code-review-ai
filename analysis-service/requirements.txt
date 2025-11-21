@@ -6,3 +6,4 @@ GitPython
 pyright
 unidiff
 google-generativeai
+pymongo

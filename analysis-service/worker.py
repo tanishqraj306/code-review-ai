@@ -9,15 +9,18 @@ import subprocess
 import glob
 import re
 import google.generativeai as genai
+from pymongo import MongoClient
 from dotenv import load_dotenv
 from github import Github
 from unidiff import PatchSet
+from datetime import datetime
 
+# Configuration & Clients
 load_dotenv()
-
 GITHUB_PAT = os.getenv("GITHUB_PAT")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+MONGO_ATLAS_URI = os.getenv("MONGO_ATLAS_URI")
 PR_QUEUE_NAME = "pr_queue"
 CLONE_DIR = "/tmp/repos"
 
@@ -26,6 +29,14 @@ print("Analysis worker started...")
 genai.configure(api_key=GEMINI_API_KEY)
 ai_model = genai.GenerativeModel("gemini-flash-latest")
 print("Successfully connected to Github and Google AI!")
+
+
+# Connect to MongoDB
+print("Connecting to MongoDB")
+mongo_client = MongoClient(MONGO_ATLAS_URI)
+db = mongo_client["code-reviewer-ai-db"]
+reviews_collection = db["reviews"]
+print("Connected to MongoDB")
 
 
 def connect_to_redis():
@@ -257,6 +268,22 @@ def post_review_comment(pr, diagnostics, ai_comment, repo_path):
             print(f"Failed to post general comment to Github: {e}")
 
 
+def save_analysis_result(repo_name, pr_number, diagnostics, ai_comment, language):
+    try:
+        review_record = {
+            "repo_name": repo_name,
+            "pr_number": pr_number,
+            "language": language,
+            "issues_found": len(diagnostics),
+            "ai_comment": ai_comment,
+            "analyzed_at": datetime.utcnow(),
+        }
+        reviews_collection.insert_one(review_record)
+        print(f"Saved analysis result for {repo_name} PR #{pr_number} to MongoDB.")
+    except Exception as e:
+        print(f"Failed to save analysis result to MongoDB: {e}")
+
+
 def main():
     """Main worker loop to process jobs from the Redis queue."""
     redis_client = connect_to_redis()
@@ -340,13 +367,14 @@ def main():
             print(
                 f"Found {len(relevant_diagnostics)} relevant diagnostics on new lines."
             )
-            if relevant_diagnostics:
-                print("Relevant diagnostics:")
-                print(json.dumps(relevant_diagnostics, indent=2))
 
             if relevant_diagnostics or diff_text:
                 ai_comment = format_comment_with_ai(relevant_diagnostics, diff_text)
                 post_review_comment(pr, relevant_diagnostics, ai_comment, repo_path)
+
+                save_analysis_result(
+                    repo_name, pr_number, relevant_diagnostics, ai_comment, language
+                )
 
             print("--- Job Complete ---\n")
 
