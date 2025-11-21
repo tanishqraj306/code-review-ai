@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
+import { ExternalLink } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
 export interface Repository {
@@ -29,6 +30,20 @@ export const columns: ColumnDef<Repository>[] = [
   {
     accessorKey: "full_name",
     header: "Repository",
+    cell: ({ row }) => {
+      const name = row.getValue("full_name") as string;
+      return (
+        <a
+          href={`https://github.com/${name}`}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium hover:underline flex items-center gap-2 w-fit"
+        >
+          {name}
+          <ExternalLink className="h-3 w-3 text-muted-foregroud" />
+        </a>
+      )
+    },
   },
   {
     accessorKey: "status",

@@ -32,6 +32,21 @@ export const columns: ColumnDef<Review>[] = [
   {
     header: "Repository / PR",
     accessorFn: (row) => `${row.repo_name} #${row.pr_number}`,
+    cell: ({ row }) => {
+      const repo = row.original.repo_name;
+      const pr = row.original.pr_number;
+      return (
+        <a
+          href={`https://github.com/${repo}/pull/${pr}`}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium hover:underline block"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {repo} <span className="text-muted-foreground">#{pr}</span>
+        </a>
+      )
+    }
   },
   {
     accessorKey: "language",
