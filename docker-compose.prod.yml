@@ -1,0 +1,33 @@
+services:
+  ingestion-service:
+    build: ./ingestion-service
+    restart: always
+    env_file: .env
+    depends_on:
+      - redis
+
+  analysis-service:
+    build: ./analysis-service
+    restart: always
+    env_file: .env
+    depends_on:
+      - redis
+
+  orchestrator-service:
+    build: ./orchestrator-service
+    restart: always
+    env_file: .env
+    depends_on:
+      - redis
+
+  redis:
+    image: "redis:alpine"
+    restart: always
+
+  frontend-service:
+    build:
+      context: ./frontend-service
+      dockerfile: Dockerfile.prod
+    restart: always
+    depends_on:
+      - ingestion-service
