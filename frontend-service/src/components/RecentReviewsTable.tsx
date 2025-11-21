@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table"
 
 import { Badge } from "@/components/ui/badge"
+import { useNavigate } from "react-router-dom"
 
 export type Review = {
   _id: string
@@ -65,6 +66,8 @@ interface RecentReviewsTableProps {
 }
 
 export function RecentReviewsTable({ data, isLoading }: RecentReviewsTableProps) {
+
+  const navigate = useNavigate();
   const table = useReactTable({
     data,
     columns,
@@ -101,6 +104,8 @@ export function RecentReviewsTable({ data, isLoading }: RecentReviewsTableProps)
               <TableRow
                 key={row.id}
                 data-state={row.getIsSelected() && "selected"}
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => navigate(`/reviews/${row.original._id}`)}
               >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
