@@ -15,7 +15,7 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="w-full max-w-4xl">
+    <div className="w-full">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Settings</h1>
       </div>
