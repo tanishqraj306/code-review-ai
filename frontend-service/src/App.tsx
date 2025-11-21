@@ -5,6 +5,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { DashboardLayout } from './layouts/DashboardLayout';
 import { useAuth } from './contexts/AuthContext.tsx'; // <-- Import the hook
 import { RepositoriesPage } from './pages/RepositoriesPage.tsx';
+import { SettingsPage } from './pages/SettingsPage.tsx';
 
 const ProtectedLayout = () => {
   const { user, isLoading } = useAuth(); // <-- Use the real auth state
@@ -44,6 +45,7 @@ function App() {
       <Route element={<ProtectedLayout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/repositories" element={<RepositoriesPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
     </Routes>
