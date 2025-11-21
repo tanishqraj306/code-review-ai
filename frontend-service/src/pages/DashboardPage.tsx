@@ -11,7 +11,8 @@ export function DashboardPage() {
     totalRepos: 0,
     totalReviews: 0,
     totalIssues: 0,
-    linterErrors: 0
+    linterErrors: 0,
+    chartData: []
   });
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -82,7 +83,7 @@ export function DashboardPage() {
       </div>
 
       <div className="mb-8">
-        <PrChart />
+        <PrChart data={stats.chartData} />
       </div>
 
       <div>

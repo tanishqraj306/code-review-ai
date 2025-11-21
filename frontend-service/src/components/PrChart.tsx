@@ -14,16 +14,9 @@ import {
 } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-// (chartData and chartConfig remain the same)
-const chartData = [
-  { date: "Jun 24", prs: 20 },
-  { date: "Jun 25", prs: 30 },
-  { date: "Jun 26", prs: 25 },
-  { date: "Jun 27", prs: 40 },
-  { date: "Jun 28", prs: 35 },
-  { date: "Jun 29", prs: 45 },
-  { date: "Jun 30", prs: 50 },
-]
+interface PrChartProps {
+  data: { date: string; prs: number }[];
+}
 
 const chartConfig = {
   prs: {
@@ -32,11 +25,14 @@ const chartConfig = {
   },
 } satisfies ChartConfig
 
-export function PrChart() {
+export function PrChart({ data }: PrChartProps) {
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
   return (
-    // 1. We use a regular <Card> as the root "box"
     <Card>
-      {/* 2. We put the header in the CardHeader */}
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div>
           <CardTitle>PRs Reviewed</CardTitle>
@@ -50,13 +46,12 @@ export function PrChart() {
         </Tabs>
       </CardHeader>
 
-      {/* 3. We put the ChartContainer *inside* the CardContent */}
       <CardContent className="px-2 pt-4">
         {/* 4. We give the ChartContainer the height */}
         <ChartContainer config={chartConfig} className="h-[200px] w-full">
           <AreaChart
             accessibilityLayer
-            data={chartData}
+            data={data}
             margin={{
               top: 0,
               right: 10,
@@ -72,6 +67,7 @@ export function PrChart() {
               tickMargin={8}
               stroke="#888888"
               fontSize={12}
+              tickFormatter={formatDate}
             />
             <YAxis
               stroke="#888888"

@@ -210,11 +210,28 @@ app.get('/api/dashboard/stats', protectRoute, async (req, res) => {
     ]).toArray();
     const stats = reviewStats[0] || { totalReviews: 0, totalIssues: 0 };
 
+    const chartDataRaw = await db.collection('reviews').aggregate([
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$analyzed_at" } },
+          prs: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } },
+      { $limit: 30 }
+    ]).toArray();
+
+    const chartData = chartDataRaw.map(item => ({
+      date: item._id,
+      prs: item.prs
+    }));
+
     res.send({
       totalRepos,
       totalReviews: stats.totalReviews,
       totalIssues: stats.totalIssues,
-      linterErrors: Math.floor(stats.totalIssues * 0.8)
+      linterErrors: Math.floor(stats.totalIssues * 0.8),
+      chartData
     });
   } catch (error) {
     console.error('Failed to fetch dashboard stats:', error);
