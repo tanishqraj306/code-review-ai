@@ -260,6 +260,20 @@ app.get('/api/reviews/:id', protectRoute, async (req, res) => {
   }
 });
 
+app.get('/api/reviews', protectRoute, async (req, res) => {
+  try {
+    const reviews = awaitdb.collection('reviews')
+      .find()
+      .sort({ analyzed_at: -1 })
+      .toArray();
+
+    res.send(reviews);
+  } catch (error) {
+    console.error('Failed to fetch review history:', error);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
+
 app.post('/api/auth/logout', (req, res) => {
   res.cookie('auth_token', '', {
     httpOnly: true,
