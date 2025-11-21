@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+// src/components/AppSidebar.tsx
+>>>>>>> feature/ui-polish
 import { LayoutDashboard, Github, Settings, ChevronDown, List } from "lucide-react";
 import {
   Sidebar,
@@ -17,9 +21,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 
 const menuItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
@@ -29,6 +34,7 @@ const menuItems = [
 ];
 
 export function AppSidebar() {
+  const { user, logout } = useAuth();
   return (
     <Sidebar>
       <SidebarHeader className="border-b p-2">
@@ -64,16 +70,18 @@ export function AppSidebar() {
         <div className="flex items-center justify-between">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="flex items-center gap-2">
+              <Button variant="ghost" className="flex items-center gap-2 px-2 w-full justify-start">
                 <Avatar className="h-6 w-6">
-                  <AvatarFallback>U</AvatarFallback>
+                  {/* Use real avatar URL */}
+                  <AvatarImage src={user?.avatarUrl} />
+                  <AvatarFallback>{user?.username?.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
-                <span className="truncate">User Profile</span>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                <span className="truncate max-w-[80px]">{user?.username}</span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground ml-auto" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" className="w-56">
-              <DropdownMenuItem>Sign Out</DropdownMenuItem>
+              <DropdownMenuItem onClick={logout}>Sign Out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <ThemeToggle />
