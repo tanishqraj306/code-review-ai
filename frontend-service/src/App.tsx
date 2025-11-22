@@ -27,19 +27,10 @@ const ProtectedLayout = () => {
 };
 
 function App() {
-  const { isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-background">
-        Loading...
-      </div>
-    );
-  }
-
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+
       <Route element={<ProtectedLayout />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/repositories" element={<RepositoriesPage />} />
@@ -47,7 +38,23 @@ function App() {
         <Route path="/reviews/:id" element={<ReviewDetialsPage />} />
         <Route path="/reviews" element={<ReviewsPage />} />
       </Route>
+
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+      <Route
+        path="*"
+        element={
+          <div className="flex h-screen items-center justify-center">
+            <div className="text-center">
+              <h1 className="text-4xl font-bold">404</h1>
+              <p className="text-muted-foreground">Page not found</p>
+              <a href="/dashboard" className="text-primary hover:underline">
+                Go Home
+              </a>
+            </div>
+          </div>
+        }
+      />
     </Routes>
   );
 }

@@ -108,9 +108,7 @@ app.get("/api/auth/callback", async (req, res) => {
       path: "/",
     });
 
-    const publicUrl = process.env.PUBLIC_URL;
-
-    res.redirect(`${publicUrl}/dashbboard`);
+    res.redirect(`${PUBLIC_URL}/dashboard`);
   } catch (error) {
     console.error("!!! AUTHENTICATION FAILED !!!");
     if (error.response) {
