@@ -71,21 +71,21 @@ def parse_diff_to_get_added_lines(diff_text):
 def detect_language(changed_files):
     """Detects the primary language of a repository."""
     print(f"Detecting language from {len(changed_files)} changed files...")
-    language_counts = {"python": 0, "c": 0}
+    language_counts = {"python": 0, "c": 0, "javascript": 0}
 
     for file_path in changed_files:
         if file_path.endswith(".py"):
             language_counts["python"] += 1
         elif file_path.endswith(("c", ".cpp", ".h", ".hpp")):
             language_counts["c"] += 1
+        elif file_path.endswith((".js", ".jsx", ".ts", ".tsx")):
+            language_counts["javascript"] += 1
 
     if not language_counts or max(language_counts.values()) == 0:
         return "unknown"
 
     primary_language = max(language_counts, key=language_counts.get)
-    print(
-        f"Detection complete: Python fiiles={language_counts['python']}, C/C++ files={language_counts['c']}"
-    )
+    print(f"Detection complete: {language_counts}")
     return primary_language
 
 
@@ -187,6 +187,79 @@ def run_clang_tidy_analysis(repo_path):
 
     except Exception as e:
         print(f"Failed to run clang-tidy: {e}")
+        return []
+
+
+def install_node_dependencies(repo_path):
+    """Installs Node dependencies if package.json exists."""
+    print("Checking for Node.js dependencies...")
+    package_json = os.path.join(repo_path, "package.json")
+
+    if os.path.exists(package_json):
+        print("Found package.json. Installing dependencies...")
+
+        try:
+            subprocess.run(
+                ["npm", "install", "--ignore-scripts", "--legacy-peer-deps"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            print("Node dependencies installed.")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to install Node dependencies: {e.stderr}")
+    else:
+        print("No package.json found. Skipping npm install.")
+
+
+def parse_eslint_output(json_output, repo_path):
+    """Parse ESLint JSON output info standard diagnostics."""
+    diagnostics = []
+    try:
+        results = json.loads(json_output)
+        for file_result in results:
+            file_path = file_result.get("filePath", "")
+            for message in file_result.get("mesages", []):
+                diagnostics.append(
+                    {
+                        "file": file_path,
+                        "range": {
+                            "start": {
+                                "line": message.get("line", 1) - 1,
+                                "character": message.get("column", 1),
+                            }
+                        },
+                        "message": message.get("message"),
+                        "severity": "ERROR"
+                        if message.get("severity") == 2
+                        else "WARNING",
+                        "rule": message.get("ruleId", "unknown"),
+                    }
+                )
+    except json.JSONDecodeError:
+        print("Failed to parse ESLint JSON.")
+    return diagnostics
+
+
+def run_eslint_analysis(repo_path):
+    """Runs ESLint on the repository."""
+
+    print("Starting ESLint analysis...")
+    try:
+        command = ["npx", "eslint", ".", "--format", "json"]
+
+        result = subprocess.run(command, cwd=repo_path, capture_output=True, text=True)
+
+        if result.stdout:
+            print("ESLint analysis complete. Parsing output...")
+            return parse_eslint_output(result.stdout, repo_path)
+        else:
+            print(f"ESLint produced no output. Stderr: {result.stderr}")
+            return []
+
+    except Exception as e:
+        print(f"Failed to run ESLint: {e}")
         return []
 
 
@@ -296,9 +369,12 @@ def main():
 
             print("\n--- ✅ Job Received ---")
 
-            payload = job_data.get("payload", {})
-            repo_data = payload.get("repository", {})
+            if "payload" in job_data:
+                payload = job_data["payload"]
+            else:
+                payload = job_data
 
+            repo_data = payload.get("repository", [])
             repo_name = repo_data.get("full_name")
             clone_url = repo_data.get("clone_url")
             pr_number = payload.get("number")
@@ -312,7 +388,6 @@ def main():
             repo = gh_client.get_repo(repo_name)
             pr = repo.get_pull(pr_number)
 
-            # Get PR diff and parse it
             diff_response = requests.get(pr.diff_url)
             diff_response.raise_for_status()
             diff_text = diff_response.text
@@ -320,8 +395,7 @@ def main():
             changed_files = list(added_lines_map.keys())
 
             language = detect_language(changed_files)
-            print(f"Found added lines in {len(added_lines_map)} files.")
-            print(f"Detected primary language of PR: {language}")
+            print(f"Detected primary language of PR:{language}")
 
             # Clone repo and install dependencies
             repo_path = os.path.join(
@@ -364,6 +438,20 @@ def main():
                         if relative_path in added_lines_map:
                             if (start_line + 1) in added_lines_map[relative_path]:
                                 relevant_diagnostics.append(diag)
+
+            elif language == "javascript":
+                install_node_dependencies(repo_path)
+                diagnostics = run_eslint_analysis(repo_path)
+
+                for diag in diagnostics:
+                    file_path = diag.get("file", "")
+                    if file_path.startswith(repo_path):
+                        relative_path = os.path.relpath(file_path, repo_path)
+                        start_line = diag.get("range", {}).get("start", {}).get("line")
+                        if relative_path in added_lines_map:
+                            if (start_line + 1) in added_lines_map[relative_path]:
+                                relevant_diagnostics.append(diag)
+
             print(
                 f"Found {len(relevant_diagnostics)} relevant diagnostics on new lines."
             )
