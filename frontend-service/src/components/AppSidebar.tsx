@@ -1,4 +1,10 @@
-import { LayoutDashboard, Github, Settings, ChevronDown, List } from "lucide-react";
+import {
+  LayoutDashboard,
+  Github,
+  Settings,
+  ChevronDown,
+  List,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -33,7 +39,10 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="border-b p-2">
-        <Button variant="ghost" className="flex w-full items-center justify-start gap-2 text-lg font-semibold">
+        <Button
+          variant="ghost"
+          className="flex w-full items-center justify-start gap-2 text-lg font-semibold"
+        >
           <span>AI Code Review</span>
         </Button>
       </SidebarHeader>
@@ -62,10 +71,15 @@ export function AppSidebar() {
         <div className="flex items-center justify-between">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="flex items-center gap-2 px-2 w-full justify-start">
+              <Button
+                variant="ghost"
+                className="flex items-center gap-2 px-2 w-full justify-start"
+              >
                 <Avatar className="h-6 w-6">
                   <AvatarImage src={user?.avatarUrl} />
-                  <AvatarFallback>{user?.username?.charAt(0).toUpperCase()}</AvatarFallback>
+                  <AvatarFallback>
+                    {user?.username?.charAt(0).toUpperCase()}
+                  </AvatarFallback>
                 </Avatar>
                 <span className="truncate max-w-[100px]">{user?.username}</span>
                 <ChevronDown className="h-4 w-4 text-muted-foreground ml-auto" />

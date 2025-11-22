@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
 import {
   type ColumnDef,
   flexRender,
   getCoreRowModel,
   useReactTable,
-} from "@tanstack/react-table"
+} from "@tanstack/react-table";
 
 import {
   Table,
@@ -14,19 +14,19 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@/components/ui/table";
 
-import { Badge } from "@/components/ui/badge"
-import { useNavigate } from "react-router-dom"
+import { Badge } from "@/components/ui/badge";
+import { useNavigate } from "react-router-dom";
 
 export type Review = {
-  _id: string
-  repo_name: string
-  pr_number: number
-  issues_found: number
-  language: string
-  analyzed_at: string
-}
+  _id: string;
+  repo_name: string;
+  pr_number: number;
+  issues_found: number;
+  language: string;
+  analyzed_at: string;
+};
 
 export const columns: ColumnDef<Review>[] = [
   {
@@ -45,8 +45,8 @@ export const columns: ColumnDef<Review>[] = [
         >
           {repo} <span className="text-muted-foreground">#{pr}</span>
         </a>
-      )
-    }
+      );
+    },
   },
   {
     accessorKey: "language",
@@ -62,35 +62,44 @@ export const columns: ColumnDef<Review>[] = [
     cell: ({ row }) => {
       const issues = row.getValue("issues_found") as number;
       return (
-        <span className={issues > 0 ? "text-red-500 font-medium" : "text-green-500"}>
+        <span
+          className={issues > 0 ? "text-red-500 font-medium" : "text-green-500"}
+        >
           {issues} issues
         </span>
-      )
+      );
     },
   },
   {
     accessorKey: "analyzed_at",
     header: "Date",
-    cell: ({ row }) => new Date(row.getValue("analyzed_at")).toLocaleDateString(),
+    cell: ({ row }) =>
+      new Date(row.getValue("analyzed_at")).toLocaleDateString(),
   },
-]
+];
 
 interface RecentReviewsTableProps {
   data: Review[];
   isLoading: boolean;
 }
 
-export function RecentReviewsTable({ data, isLoading }: RecentReviewsTableProps) {
-
+export function RecentReviewsTable({
+  data,
+  isLoading,
+}: RecentReviewsTableProps) {
   const navigate = useNavigate();
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
-  })
+  });
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading recent reviews...</div>
+    return (
+      <div className="text-sm text-muted-foreground">
+        Loading recent reviews...
+      </div>
+    );
   }
 
   return (
@@ -103,12 +112,13 @@ export function RecentReviewsTable({ data, isLoading }: RecentReviewsTableProps)
                 return (
                   <TableHead key={header.id}>
                     {header.isPlaceholder
-                      ? null : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
                   </TableHead>
-                )
+                );
               })}
             </TableRow>
           ))}
@@ -139,5 +149,5 @@ export function RecentReviewsTable({ data, isLoading }: RecentReviewsTableProps)
         </TableBody>
       </Table>
     </div>
-  )
+  );
 }

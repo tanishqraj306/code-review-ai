@@ -1,12 +1,12 @@
-"use client"
+"use client";
 
-import { useState, useMemo } from "react"
+import { useState, useMemo } from "react";
 import {
   type ColumnDef,
   flexRender,
   getCoreRowModel,
   useReactTable,
-} from "@tanstack/react-table"
+} from "@tanstack/react-table";
 
 import {
   Table,
@@ -15,12 +15,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@/components/ui/table";
 
-
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Trash2, ExternalLink, Loader2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Trash2, ExternalLink, Loader2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
 
 export interface Repository {
   _id: string;
@@ -47,15 +46,18 @@ interface RepositoriesTableProps {
   onDataChange: () => void;
 }
 
-export function RepositoriesTable({ data, isLoading, onDataChange }: RepositoriesTableProps) {
+export function RepositoriesTable({
+  data,
+  isLoading,
+  onDataChange,
+}: RepositoriesTableProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
-
     setDeletingId(id);
     try {
       const res = await fetch(`/api/repositories/${id}`, {
-        method: 'DELETE'
+        method: "DELETE",
       });
 
       if (res.ok) {
@@ -89,7 +91,7 @@ export function RepositoriesTable({ data, isLoading, onDataChange }: Repositorie
               {name}
               <ExternalLink className="h-3 w-3 text-muted-foreground" />
             </a>
-          )
+          );
         },
       },
       {
@@ -97,14 +99,18 @@ export function RepositoriesTable({ data, isLoading, onDataChange }: Repositorie
         header: "Status",
         cell: ({ row }) => {
           const status = row.getValue("status") as string;
-          return <Badge variant={status === "active" ? "default" : "outline"}>{status}</Badge>
+          return (
+            <Badge variant={status === "active" ? "default" : "outline"}>
+              {status}
+            </Badge>
+          );
         },
       },
       {
         accessorKey: "added_at",
         header: "Date Added",
         cell: ({ row }) => {
-          return new Date(row.getValue("added_at")).toLocaleDateString()
+          return new Date(row.getValue("added_at")).toLocaleDateString();
         },
       },
       {
@@ -133,10 +139,13 @@ export function RepositoriesTable({ data, isLoading, onDataChange }: Repositorie
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogTitle>
+                      Are you absolutely sure?
+                    </AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will stop monitoring <strong>{name}</strong> and remove it from your dashboard.
-                      The analysis history will remain.
+                      This will stop monitoring <strong>{name}</strong> and
+                      remove it from your dashboard. The analysis history will
+                      remain.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -151,21 +160,25 @@ export function RepositoriesTable({ data, isLoading, onDataChange }: Repositorie
                 </AlertDialogContent>
               </AlertDialog>
             </div>
-          )
-        }
-      }
+          );
+        },
+      },
     ],
-    [deletingId]
+    [deletingId],
   );
 
   const table = useReactTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
-  })
+  });
 
   if (isLoading) {
-    return <div className="text-sm text-muted-foreground p-4">Loading repositories...</div>
+    return (
+      <div className="text-sm text-muted-foreground p-4">
+        Loading repositories...
+      </div>
+    );
   }
 
   return (
@@ -179,9 +192,9 @@ export function RepositoriesTable({ data, isLoading, onDataChange }: Repositorie
                   {header.isPlaceholder
                     ? null
                     : flexRender(
-                      header.column.columnDef.header,
-                      header.getContext()
-                    )}
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
                 </TableHead>
               ))}
             </TableRow>
@@ -208,5 +221,5 @@ export function RepositoriesTable({ data, isLoading, onDataChange }: Repositorie
         </TableBody>
       </Table>
     </div>
-  )
+  );
 }

@@ -9,7 +9,7 @@ interface AddRepositoryFormProps {
 
 export function AddRepositoryForm({ onRepoAdded }: AddRepositoryFormProps) {
   const [repoUrl, setRepoUrl] = useState("");
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
 
@@ -39,7 +39,9 @@ export function AddRepositoryForm({ onRepoAdded }: AddRepositoryFormProps) {
       onRepoAdded();
     } catch (error) {
       setIsError(true);
-      setMessage(error instanceof Error ? error.message : "An unknown error occurred");
+      setMessage(
+        error instanceof Error ? error.message : "An unknown error occurred",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -47,7 +49,10 @@ export function AddRepositoryForm({ onRepoAdded }: AddRepositoryFormProps) {
 
   return (
     <div className="space-y-3">
-      <form onSubmit={handleSubmit} className="flex w-full max-w-lg items-center space-x-2">
+      <form
+        onSubmit={handleSubmit}
+        className="flex w-full max-w-lg items-center space-x-2"
+      >
         <Input
           type="url"
           placeholder="https://github.com/user/repo"
@@ -61,11 +66,17 @@ export function AddRepositoryForm({ onRepoAdded }: AddRepositoryFormProps) {
         </Button>
       </form>
       {message && (
-        <div className={`flex items-center text-sm ${isError ? "text-red-500" : "text-green-500"}`}>
-          {isError ? <AlertCircle className="h-4 w-4 mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+        <div
+          className={`flex items-center text-sm ${isError ? "text-red-500" : "text-green-500"}`}
+        >
+          {isError ? (
+            <AlertCircle className="h-4 w-4 mr-2" />
+          ) : (
+            <CheckCircle2 className="h-4 w-4 mr-2" />
+          )}
           {message}
         </div>
       )}
     </div>
-  )
+  );
 }

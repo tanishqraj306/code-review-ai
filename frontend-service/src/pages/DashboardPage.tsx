@@ -1,10 +1,13 @@
-import { StatCard } from "@/components/StatCard"
-import { PrChart } from "@/components/PrChart"
-import { RecentReviewsTable } from "@/components/RecentReviewsTable" // <-- Import Table
-import { Button } from "@/components/ui/button" // <-- Import Button
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs" // <-- Import Tabs
-import { ListFilter } from "lucide-react"
-import { useEffect, useState } from "react"
+import { StatCard } from "@/components/StatCard";
+import { PrChart } from "@/components/PrChart";
+import {
+  RecentReviewsTable,
+  type Review,
+} from "@/components/RecentReviewsTable";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ListFilter } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export function DashboardPage() {
   const [stats, setStats] = useState({
@@ -12,7 +15,7 @@ export function DashboardPage() {
     totalReviews: 0,
     totalIssues: 0,
     linterErrors: 0,
-    chartData: []
+    chartData: [],
   });
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,11 +23,11 @@ export function DashboardPage() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const statsRes = await fetch('/api/dashboard/stats');
+        const statsRes = await fetch("/api/dashboard/stats");
         const statsData = await statsRes.json();
         setStats(statsData);
 
-        const reviewsRes = await fetch('/api/dashboard/reviews');
+        const reviewsRes = await fetch("/api/dashboard/reviews");
         const reviewsData = await reviewsRes.json();
         setReviews(reviewsData);
       } catch (error) {
@@ -105,5 +108,5 @@ export function DashboardPage() {
         <RecentReviewsTable data={reviews} isLoading={isLoading} />
       </div>
     </div>
-  )
+  );
 }

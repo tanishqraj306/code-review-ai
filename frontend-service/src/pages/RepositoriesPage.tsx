@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { AddRepositoryForm } from "@/components/AddRepositoryForm";
-import { RepositoriesTable, type Repository } from "@/components/RepositoriesTable";
+import {
+  RepositoriesTable,
+  type Repository,
+} from "@/components/RepositoriesTable";
 
 export function RepositoriesPage() {
   const [data, setData] = useState<Repository[]>([]);
@@ -42,7 +45,6 @@ export function RepositoriesPage() {
 
       <div>
         <h2 className="text-lg font-semibold mb-4">Monitored Repositories</h2>
-        {/* We pass fetchRepositories as 'onDataChange' so the list updates immediately after deleting */}
         <RepositoriesTable
           data={data}
           isLoading={isLoading}

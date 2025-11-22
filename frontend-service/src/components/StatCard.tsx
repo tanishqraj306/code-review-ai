@@ -1,10 +1,5 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { ArrowUp } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowUp } from "lucide-react";
 
 interface StatCardProps {
   title: string;
@@ -13,7 +8,12 @@ interface StatCardProps {
   description: string;
 }
 
-export function StatCard({ title, value, percentage, description }: StatCardProps) {
+export function StatCard({
+  title,
+  value,
+  percentage,
+  description,
+}: StatCardProps) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -28,5 +28,5 @@ export function StatCard({ title, value, percentage, description }: StatCardProp
         <p className="text-xs text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
-  )
+  );
 }

@@ -5,7 +5,6 @@ import { Outlet } from "react-router-dom";
 export function DashboardLayout() {
   return (
     <SidebarProvider className="min-h-screen bg-background text-foreground">
-
       <AppSidebar />
 
       <main className="w-full">

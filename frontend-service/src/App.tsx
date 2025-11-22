@@ -1,15 +1,15 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { LoginPage } from './pages/LoginPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { DashboardLayout } from './layouts/DashboardLayout';
-import { useAuth } from './contexts/AuthContext.tsx'; // <-- Import the hook
-import { RepositoriesPage } from './pages/RepositoriesPage.tsx';
-import { SettingsPage } from './pages/SettingsPage.tsx';
-import { ReviewDetialsPage } from './pages/ReviewDetailsPage.tsx';
-import { ReviewsPage } from './pages/ReviewsPage.tsx';
+import { Routes, Route, Navigate } from "react-router-dom";
+import { LoginPage } from "./pages/LoginPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { DashboardLayout } from "./layouts/DashboardLayout";
+import { useAuth } from "./contexts/AuthContext.tsx";
+import { RepositoriesPage } from "./pages/RepositoriesPage.tsx";
+import { SettingsPage } from "./pages/SettingsPage.tsx";
+import { ReviewDetialsPage } from "./pages/ReviewDetailsPage.tsx";
+import { ReviewsPage } from "./pages/ReviewsPage.tsx";
 
 const ProtectedLayout = () => {
-  const { user, isLoading } = useAuth(); // <-- Use the real auth state
+  const { user, isLoading } = useAuth();
 
   if (isLoading) {
     return (

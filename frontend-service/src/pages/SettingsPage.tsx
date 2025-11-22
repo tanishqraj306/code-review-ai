@@ -11,7 +11,7 @@ export function SettingsPage() {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate("/login");
   };
 
   return (
@@ -30,7 +30,9 @@ export function SettingsPage() {
               </div>
               <div>
                 <p className="text-sm font-medium">{user.username}</p>
-                <p className="text-xs text-muted-foreground">Github ID: {user.userId}</p>
+                <p className="text-xs text-muted-foreground">
+                  Github ID: {user.userId}
+                </p>
               </div>
             </div>
           ) : (
@@ -76,9 +78,8 @@ export function SettingsPage() {
               System
             </Button>
           </div>
-
         </div>
       </div>
     </div>
-  )
+  );
 }

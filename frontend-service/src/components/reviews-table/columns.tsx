@@ -1,19 +1,19 @@
-"use client"
+"use client";
 
-import { type ColumnDef } from "@tanstack/react-table"
-import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Button } from "@/components/ui/button"
-import { ArrowUpDown, ExternalLink } from "lucide-react"
+import { type ColumnDef } from "@tanstack/react-table";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { ArrowUpDown, ExternalLink } from "lucide-react";
 
 export type Review = {
-  _id: string
-  repo_name: string
-  pr_number: number
-  language: string
-  issues_found: number
-  analyzed_at: string
-}
+  _id: string;
+  repo_name: string;
+  pr_number: number;
+  language: string;
+  issues_found: number;
+  analyzed_at: string;
+};
 
 export const columns: ColumnDef<Review>[] = [
   {
@@ -48,7 +48,9 @@ export const columns: ColumnDef<Review>[] = [
         <ArrowUpDown className="ml-2 h-4 w-4" />
       </Button>
     ),
-    cell: ({ row }) => <div className="w-[150px] font-medium">{row.getValue("repo_name")}</div>,
+    cell: ({ row }) => (
+      <div className="w-[150px] font-medium">{row.getValue("repo_name")}</div>
+    ),
   },
   {
     accessorKey: "pr_number",
@@ -69,7 +71,7 @@ export const columns: ColumnDef<Review>[] = [
             <ExternalLink className="h-3 w-3" />
           </a>
         </div>
-      )
+      );
     },
   },
   {
@@ -81,10 +83,10 @@ export const columns: ColumnDef<Review>[] = [
         <Badge variant="outline" className="capitalize">
           {lang}
         </Badge>
-      )
+      );
     },
     filterFn: (row, id, value) => {
-      return value.includes(row.getValue(id))
+      return value.includes(row.getValue(id));
     },
   },
   {
@@ -104,14 +106,19 @@ export const columns: ColumnDef<Review>[] = [
       return (
         <div className="flex items-center">
           {issues === 0 ? (
-            <Badge variant="secondary" className="bg-green-500/10 text-green-500 hover:bg-green-500/20 border-green-500/20">Clean</Badge>
+            <Badge
+              variant="secondary"
+              className="bg-green-500/10 text-green-500 hover:bg-green-500/20 border-green-500/20"
+            >
+              Clean
+            </Badge>
           ) : (
             <Badge variant="destructive" className="flex gap-1">
               {issues} Issues
             </Badge>
           )}
         </div>
-      )
+      );
     },
   },
   {
@@ -119,7 +126,9 @@ export const columns: ColumnDef<Review>[] = [
     header: "Date",
     cell: ({ row }) => {
       const date = new Date(row.getValue("analyzed_at"));
-      return <div className="text-muted-foreground">{date.toLocaleDateString()}</div>
+      return (
+        <div className="text-muted-foreground">{date.toLocaleDateString()}</div>
+      );
     },
   },
-]
+];

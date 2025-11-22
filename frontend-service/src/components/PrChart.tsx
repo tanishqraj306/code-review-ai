@@ -1,18 +1,18 @@
 // src/components/PrChart.tsx
-import { Area, AreaChart, XAxis, YAxis, CartesianGrid } from "recharts"
+import { Area, AreaChart, XAxis, YAxis, CartesianGrid } from "recharts";
 import {
   type ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
-} from "@/components/ui/chart"
+} from "@/components/ui/chart";
 import {
-  Card, // <-- Import Card
+  Card,
   CardHeader,
   CardTitle,
   CardContent,
   CardDescription,
-} from "@/components/ui/card"
+} from "@/components/ui/card";
 
 interface PrChartProps {
   data: { date: string; prs: number }[];
@@ -23,12 +23,12 @@ const chartConfig = {
     label: "PRs Reviewed",
     color: "hsl(217.2 91.2% 59.8%)",
   },
-} satisfies ChartConfig
+} satisfies ChartConfig;
 
 export function PrChart({ data }: PrChartProps) {
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
   return (
@@ -70,8 +70,16 @@ export function PrChart({ data }: PrChartProps) {
             <ChartTooltip content={<ChartTooltipContent />} />
             <defs>
               <linearGradient id="colorPrs" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-prs)" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="var(--color-prs)" stopOpacity={0.1} />
+                <stop
+                  offset="5%"
+                  stopColor="var(--color-prs)"
+                  stopOpacity={0.8}
+                />
+                <stop
+                  offset="95%"
+                  stopColor="var(--color-prs)"
+                  stopOpacity={0.1}
+                />
               </linearGradient>
             </defs>
             <Area
@@ -86,5 +94,5 @@ export function PrChart({ data }: PrChartProps) {
         </ChartContainer>
       </CardContent>
     </Card>
-  )
+  );
 }
