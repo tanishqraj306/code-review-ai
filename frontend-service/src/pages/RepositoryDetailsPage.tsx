@@ -16,12 +16,24 @@ import {
   Sparkles,
   Loader2,
   RefreshCw,
-} from "lucide-react"; // <-- Import RefreshCw
+  Trash2,
+} from "lucide-react";
 import {
   RecentReviewsTable,
   type Review,
 } from "@/components/RecentReviewsTable";
 import ReactMarkdown from "react-markdown";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+  AlertDialogHeader,
+  AlertDialogFooter,
+} from "@/components/ui/alert-dialog";
 
 interface RepositoryDetails {
   _id: string;
@@ -39,6 +51,7 @@ export function RepositoryDetailsPage() {
   const [repo, setRepo] = useState<RepositoryDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const requestTimeRef = useRef<Date | null>(null);
 
@@ -80,6 +93,24 @@ export function RepositoryDetailsPage() {
     return () => clearInterval(interval);
   }, [isGenerating, fetchRepoDetails]);
 
+  const handleDeleteRepo = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/repositories/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        navigate("/repositories"); // Redirect back to list
+      } else {
+        const errorData = await res.json();
+        alert(`Failed to delete: ${errorData.message}`);
+        setIsDeleting(false);
+      }
+    } catch (error) {
+      console.error(error);
+      setIsDeleting(false);
+      alert("An error occurred.");
+    }
+  };
+
   const handleGenerateDescription = async () => {
     setIsGenerating(true);
     requestTimeRef.current = new Date();
@@ -102,19 +133,50 @@ export function RepositoryDetailsPage() {
 
   return (
     <div className="w-full space-y-6">
-      {/* Header / Nav */}
-      <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => navigate("/repositories")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <h1 className="text-2xl font-bold">{repo.full_name}</h1>
-        <Badge variant={repo.status === "active" ? "default" : "secondary"}>
-          {repo.status}
-        </Badge>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/repositories")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-2xl font-bold">{repo.full_name}</h1>
+          <Badge variant={repo.status === "active" ? "default" : "secondary"}>
+            {repo.status}
+          </Badge>
+        </div>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" size="sm" disabled={isDeleting}>
+              {isDeleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Delete Repository
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this repository?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will stop monitoring{" "}
+                <strong>{repo.full_name}</strong>.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteRepo}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       <Card className="border-primary/20 shadow-sm font-sans">

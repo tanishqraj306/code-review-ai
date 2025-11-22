@@ -123,7 +123,7 @@ export function RepositoriesTable({
           const isDeleting = deletingId === id;
 
           return (
-            <div className="text-right">
+            <div className="text-right" onClick={(e) => e.stopPropagation()}>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
