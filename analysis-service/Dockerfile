@@ -1,7 +1,16 @@
 
 FROM python:3.14-slim
 
-RUN apt-get update && apt-get install -y git clang-tidy
+RUN apt-get update && apt-get install -y \
+  git \
+  clang-tidy \
+  curl \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSl https://deb.nodesource.com/setup_18.x | bash - \
+  && apt-get install -y nodejs
+
+RUN node -v && npm -v
 
 WORKDIR /app
 
