@@ -405,6 +405,42 @@ app.post("/api/webhook", async (req, res) => {
   }
 });
 
+app.post("/api/repositories/:id/analyze", protectRoute, async (req, res) => {
+  const { id } = req.params;
+
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid repository ID" });
+  }
+
+  try {
+    const repo = await db.collection("repositories").findOne({
+      _id: new ObjectId(id),
+      userId: req.user.userId,
+    });
+
+    if (!repo) {
+      return res.status(404).send({ message: "Repository not found" });
+    }
+
+    const jobData = {
+      eventType: "repository_analysis",
+      payload: {
+        repo_id: id,
+        repo_name: repo.full_name,
+        clone_url: repo.url,
+      },
+    };
+
+    await redisClient.lPush("pr_queue", JSON.stringify(jobData));
+
+    console.log(`Queued analysis for repo: ${repo.full_name}`);
+    res.status(202).send({ message: "Analysis started. Check back shortly." });
+  } catch (error) {
+    console.error("Failed to queue analysis:", error);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
+
 app.delete("/api/repositories/:id", protectRoute, async (req, res) => {
   const { id } = req.params;
 
