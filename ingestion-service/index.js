@@ -350,7 +350,7 @@ app.get("/api/reviews/:id", protectRoute, async (req, res) => {
   }
 });
 
-app.get("/api/repositories:id", protectRoute, async (req, res) => {
+app.get("/api/repositories/:id", protectRoute, async (req, res) => {
   const { id } = req.params;
 
   if (!ObjectId.isValid(id)) {

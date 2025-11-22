@@ -7,6 +7,7 @@ import { RepositoriesPage } from "./pages/RepositoriesPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { ReviewDetialsPage } from "./pages/ReviewDetailsPage.tsx";
 import { ReviewsPage } from "./pages/ReviewsPage.tsx";
+import { RepositoryDetailsPage } from "./pages/RepositoryDetailsPage.tsx";
 
 const ProtectedLayout = () => {
   const { user, isLoading } = useAuth();
@@ -37,6 +38,7 @@ function App() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/reviews/:id" element={<ReviewDetialsPage />} />
         <Route path="/reviews" element={<ReviewsPage />} />
+        <Route path="/repositories/:id" element={<RepositoryDetailsPage />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

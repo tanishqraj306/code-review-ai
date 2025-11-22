@@ -31,6 +31,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useNavigate } from "react-router-dom";
 
 export interface Repository {
   _id: string;
@@ -52,6 +53,7 @@ export function RepositoriesTable({
   onDataChange,
 }: RepositoriesTableProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const handleDelete = async (id: string) => {
     setDeletingId(id);
@@ -203,7 +205,12 @@ export function RepositoriesTable({
         <TableBody>
           {table.getRowModel().rows?.length ? (
             table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
+              <TableRow
+                key={row.id}
+                data-state={row.getIsSelected() && "selected"}
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={() => navigate(`/repositories/${row.original._id}`)}
+              >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
