@@ -7,3 +7,4 @@ pyright
 unidiff
 google-generativeai
 pymongo
+bson

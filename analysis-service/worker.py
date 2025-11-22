@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from github import Github
 from unidiff import PatchSet
 from datetime import datetime
+from bson.objectid import ObjectId
 
 # Configuration & Clients
 load_dotenv()
@@ -36,6 +37,7 @@ print("Connecting to MongoDB")
 mongo_client = MongoClient(MONGO_ATLAS_URI)
 db = mongo_client["code-reviewer-ai-db"]
 reviews_collection = db["reviews"]
+repositories_collection = db["repositories"]
 print("Connected to MongoDB")
 
 
@@ -263,6 +265,76 @@ def run_eslint_analysis(repo_path):
         return []
 
 
+def analyze_repository(repo_id, repo_name, clone_url):
+    print(f"Starting repository analysis for {repo_name}...")
+    repo_path = os.path.join(CLONE_DIR, repo_name.replace("/", "_"), "analysis")
+
+    try:
+        auth_clone_url = clone_url.replace("https://", f"https://oauth2:{GITHUB_PAT}@")
+        if os.path.exists(repo_path):
+            shutil.rmtree(repo_path)
+
+        print(f"Cloning {repo_name}...")
+        git.Repo.clone_from(auth_clone_url, repo_path)
+
+        readme_content = "No README found."
+        file_structure = []
+
+        for name in ["README.md", "readme.md", "README.txt"]:
+            p = os.path.join(repo_path, name)
+            if os.path.exists(p):
+                with open(p, "r", errors="ignore") as f:
+                    readme_content = f.read()[:5000]
+                break
+
+        for root, dirs, files in os.walk(repo_path):
+            level = root.replace(repo_path, "").count(os.sep)
+            if level < 2:
+                indent = " " * 4 * level
+                file_structure.append(f"{indent}{os.path.basename(root)}/")
+                for f in files[:10]:
+                    file_structure.append(f"{indent}    {f}")
+
+        structure_text = "\n".join(file_structure)
+
+        prompt = f"""
+        You are an expert technical writer. Please generate a concise, professional summary of the following software project.
+        
+        Project Name: {repo_name}
+        
+        File Structure:
+        {structure_text}
+        
+        README Content (Excerpt):
+        {readme_content}
+        
+        Please provide:
+        1. A 2-sentence "Elevator Pitch" description.
+        2. The primary tech stack (languages, frameworks) detected.
+        3. Key features or modules inferred from the structure.
+        """
+
+        print("Asking Gemini for summary...")
+        response = ai_model.generate_content(prompt)
+        ai_description = response.text
+
+        repositories_collection.update_one(
+            {"_id": ObjectId(repo_id)},
+            {
+                "$set": {
+                    "ai_description": ai_description,
+                    "last_analyzed_at": datetime.utcnow(),
+                }
+            },
+        )
+        print(f"Successfully updated repository description for {repo_name}")
+    except Exception as e:
+        print(f"Repository analysis failed: {e}")
+    finally:
+        if os.path.exists(repo_path):
+            shutil.rmtree(repo_path)
+
+
 def format_comment_with_ai(diagnostics, diff_text):
     """Uses an AI to format LSP diagnostic and review code for logic errors."""
     print("Formatting comment with AI using full code context...")
@@ -380,102 +452,120 @@ def main():
 
             print("\n--- ✅ Job Received ---")
 
-            if "payload" in job_data:
-                payload = job_data["payload"]
-            else:
-                payload = job_data
+            event_type = job_data.get("eventType")
 
-            repo_data = payload.get("repository", [])
-            repo_name = repo_data.get("full_name")
-            clone_url = repo_data.get("clone_url")
-            pr_number = payload.get("number")
-
-            if not all([repo_name, clone_url, pr_number]):
-                print("Payload missing required data.")
+            if event_type == "repository_analysis":
+                payload = job_data.get("payload", {})
+                analyze_repository(
+                    payload.get("repo_id"),
+                    payload.get("repo_name"),
+                    payload.get("clone_url"),
+                )
+                print("--- Repository Analysis Complete ---")
                 continue
+            if event_type == "pull_request":
+                if "payload" in job_data:
+                    payload = job_data["payload"]
+                else:
+                    payload = job_data
 
-            print(f"Processing PR #{pr_number} from {repo_name}")
+                repo_data = payload.get("repository", [])
+                repo_name = repo_data.get("full_name")
+                clone_url = repo_data.get("clone_url")
+                pr_number = payload.get("number")
 
-            repo = gh_client.get_repo(repo_name)
-            pr = repo.get_pull(pr_number)
+                if not all([repo_name, clone_url, pr_number]):
+                    print("Payload missing required data.")
+                    continue
 
-            diff_response = requests.get(pr.diff_url)
-            diff_response.raise_for_status()
-            diff_text = diff_response.text
-            added_lines_map = parse_diff_to_get_added_lines(diff_response.text)
-            changed_files = list(added_lines_map.keys())
+                print(f"Processing PR #{pr_number} from {repo_name}")
 
-            language = detect_language(changed_files)
-            print(f"Detected primary language of PR:{language}")
+                repo = gh_client.get_repo(repo_name)
+                pr = repo.get_pull(pr_number)
 
-            # Clone repo and install dependencies
-            repo_path = os.path.join(
-                CLONE_DIR, repo_name.replace("/", "_"), str(pr_number)
-            )
-            auth_clone_url = clone_url.replace(
-                "https://", f"https://oauth2:{GITHUB_PAT}@"
-            )
-            print(f"Cloning default branch of {repo_name}...")
-            cloned_repo = git.Repo.clone_from(auth_clone_url, repo_path)
-            pr_refspec = f"refs/pull/{pr_number}/head"
-            local_pr_branch = f"pr-{pr_number}"
-            print(f"Fetching PR refspec: {pr_refspec}...")
-            cloned_repo.git.fetch("origin", f"{pr_refspec}:{local_pr_branch}")
-            cloned_repo.git.checkout(local_pr_branch)
-            print(f"Successfully checked out code for PR #{pr_number}")
+                diff_response = requests.get(pr.diff_url)
+                diff_response.raise_for_status()
+                diff_text = diff_response.text
+                added_lines_map = parse_diff_to_get_added_lines(diff_response.text)
+                changed_files = list(added_lines_map.keys())
 
-            # Filter diagnostics and run LSP
-            relevant_diagnostics = []
-            if language == "python":
-                install_python_dependencies(repo_path)
-                diagnostics = run_pyright_analysis(repo_path)
-                for diag in diagnostics:
-                    file_path = diag.get("file")
-                    if file_path.startswith(repo_path):
-                        relative_path = os.path.relpath(file_path, repo_path)
-                        start_line = diag.get("range", {}).get("start", {}).get("line")
+                language = detect_language(changed_files)
+                print(f"Detected primary language of PR:{language}")
 
-                        if relative_path in added_lines_map:
-                            if (start_line + 1) in added_lines_map[relative_path]:
-                                relevant_diagnostics.append(diag)
-            elif language == "c":
-                diagnostics = run_clang_tidy_analysis(repo_path)
-                for diag in diagnostics:
-                    file_path = diag.get("file", "")
-                    if file_path.startswith(repo_path):
-                        relative_path = os.path.relpath(file_path, repo_path)
-                        start_line = diag.get("range", {}).get("start", {}).get("line")
+                # Clone repo and install dependencies
+                repo_path = os.path.join(
+                    CLONE_DIR, repo_name.replace("/", "_"), str(pr_number)
+                )
+                auth_clone_url = clone_url.replace(
+                    "https://", f"https://oauth2:{GITHUB_PAT}@"
+                )
+                print(f"Cloning default branch of {repo_name}...")
+                cloned_repo = git.Repo.clone_from(auth_clone_url, repo_path)
+                pr_refspec = f"refs/pull/{pr_number}/head"
+                local_pr_branch = f"pr-{pr_number}"
+                print(f"Fetching PR refspec: {pr_refspec}...")
+                cloned_repo.git.fetch("origin", f"{pr_refspec}:{local_pr_branch}")
+                cloned_repo.git.checkout(local_pr_branch)
+                print(f"Successfully checked out code for PR #{pr_number}")
 
-                        if relative_path in added_lines_map:
-                            if (start_line + 1) in added_lines_map[relative_path]:
-                                relevant_diagnostics.append(diag)
+                # Filter diagnostics and run LSP
+                relevant_diagnostics = []
+                if language == "python":
+                    install_python_dependencies(repo_path)
+                    diagnostics = run_pyright_analysis(repo_path)
+                    for diag in diagnostics:
+                        file_path = diag.get("file")
+                        if file_path.startswith(repo_path):
+                            relative_path = os.path.relpath(file_path, repo_path)
+                            start_line = (
+                                diag.get("range", {}).get("start", {}).get("line")
+                            )
 
-            elif language == "javascript":
-                install_node_dependencies(repo_path)
-                diagnostics = run_eslint_analysis(repo_path)
+                            if relative_path in added_lines_map:
+                                if (start_line + 1) in added_lines_map[relative_path]:
+                                    relevant_diagnostics.append(diag)
+                elif language == "c":
+                    diagnostics = run_clang_tidy_analysis(repo_path)
+                    for diag in diagnostics:
+                        file_path = diag.get("file", "")
+                        if file_path.startswith(repo_path):
+                            relative_path = os.path.relpath(file_path, repo_path)
+                            start_line = (
+                                diag.get("range", {}).get("start", {}).get("line")
+                            )
 
-                for diag in diagnostics:
-                    file_path = diag.get("file", "")
-                    if file_path.startswith(repo_path):
-                        relative_path = os.path.relpath(file_path, repo_path)
-                        start_line = diag.get("range", {}).get("start", {}).get("line")
-                        if relative_path in added_lines_map:
-                            if (start_line + 1) in added_lines_map[relative_path]:
-                                relevant_diagnostics.append(diag)
+                            if relative_path in added_lines_map:
+                                if (start_line + 1) in added_lines_map[relative_path]:
+                                    relevant_diagnostics.append(diag)
 
-            print(
-                f"Found {len(relevant_diagnostics)} relevant diagnostics on new lines."
-            )
+                elif language == "javascript":
+                    install_node_dependencies(repo_path)
+                    diagnostics = run_eslint_analysis(repo_path)
 
-            if relevant_diagnostics or diff_text:
-                ai_comment = format_comment_with_ai(relevant_diagnostics, diff_text)
-                post_review_comment(pr, relevant_diagnostics, ai_comment, repo_path)
+                    for diag in diagnostics:
+                        file_path = diag.get("file", "")
+                        if file_path.startswith(repo_path):
+                            relative_path = os.path.relpath(file_path, repo_path)
+                            start_line = (
+                                diag.get("range", {}).get("start", {}).get("line")
+                            )
+                            if relative_path in added_lines_map:
+                                if (start_line + 1) in added_lines_map[relative_path]:
+                                    relevant_diagnostics.append(diag)
 
-                save_analysis_result(
-                    repo_name, pr_number, relevant_diagnostics, ai_comment, language
+                print(
+                    f"Found {len(relevant_diagnostics)} relevant diagnostics on new lines."
                 )
 
-            print("--- Job Complete ---\n")
+                if relevant_diagnostics or diff_text:
+                    ai_comment = format_comment_with_ai(relevant_diagnostics, diff_text)
+                    post_review_comment(pr, relevant_diagnostics, ai_comment, repo_path)
+
+                    save_analysis_result(
+                        repo_name, pr_number, relevant_diagnostics, ai_comment, language
+                    )
+
+                print("--- Job Complete ---\n")
 
         except Exception as e:
             print(f"An error occurred: {e}")
