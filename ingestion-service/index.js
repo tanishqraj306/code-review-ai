@@ -350,6 +350,39 @@ app.get("/api/reviews/:id", protectRoute, async (req, res) => {
   }
 });
 
+app.get("/api/repositories:id", protectRoute, async (req, res) => {
+  const { id } = req.params;
+
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid repository ID" });
+  }
+
+  try {
+    const repo = await db.collection("repositories").findOne({
+      _id: new ObjectId(id),
+      userId: req.user.userId,
+    });
+
+    if (!repo) {
+      return res.status(404).send({ message: "Repository not found" });
+    }
+
+    const reviews = await db
+      .collection("reviews")
+      .find({
+        repo_name: repo.full_name,
+        userId: req.user.userId,
+      })
+      .sort({ analyzed_at: -1 })
+      .toArray();
+
+    res.send({ ...repo, reviews });
+  } catch (error) {
+    console.error("Failed to fetch repository details:", error);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
+
 app.post("/api/webhook", async (req, res) => {
   const githubEvent = req.headers["x-github-event"];
   console.log(`Webhook received! Event type: ${githubEvent}`);
