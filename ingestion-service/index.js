@@ -253,6 +253,7 @@ app.get("/api/dashboard/stats", protectRoute, async (req, res) => {
     const reviewStats = await db
       .collection("reviews")
       .aggregate([
+        { $match: { userId: req.user.userId } },
         {
           $group: {
             _id: null,
@@ -268,6 +269,7 @@ app.get("/api/dashboard/stats", protectRoute, async (req, res) => {
     const chartDataRaw = await db
       .collection("reviews")
       .aggregate([
+        { $match: { userId: req.user.userId } },
         {
           $group: {
             _id: {
@@ -303,7 +305,7 @@ app.get("/api/dashboard/reviews", protectRoute, async (req, res) => {
   try {
     const recentReviews = await db
       .collection("reviews")
-      .find()
+      .find({ userId: req.user.userId })
       .sort({ analyzed_at: -1 })
       .limit(10)
       .toArray();
@@ -318,7 +320,7 @@ app.get("/api/reviews", protectRoute, async (req, res) => {
   try {
     const reviews = await db
       .collection("reviews")
-      .find()
+      .find({ userId: req.user.userId })
       .sort({ analyzed_at: -1 })
       .toArray();
     res.send(reviews);
@@ -336,6 +338,7 @@ app.get("/api/reviews/:id", protectRoute, async (req, res) => {
     }
     const review = await db.collection("reviews").findOne({
       _id: new ObjectId(id),
+      userId: req.user.userId,
     });
     if (!review) {
       return res.status(404).send({ message: "Review not found" });

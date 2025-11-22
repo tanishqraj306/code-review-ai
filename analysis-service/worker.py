@@ -343,16 +343,27 @@ def post_review_comment(pr, diagnostics, ai_comment, repo_path):
 
 def save_analysis_result(repo_name, pr_number, diagnostics, ai_comment, language):
     try:
-        review_record = {
-            "repo_name": repo_name,
-            "pr_number": pr_number,
-            "language": language,
-            "issues_found": len(diagnostics),
-            "ai_comment": ai_comment,
-            "analyzed_at": datetime.utcnow(),
-        }
-        reviews_collection.insert_one(review_record)
-        print(f"Saved analysis result for {repo_name} PR #{pr_number} to MongoDB.")
+        repos = list(db.repositories.find({"full_name": repo_name}))
+
+        if not repos:
+            print(f"Warning: No users found monitoring {repo_name}. Review not saved.")
+            return
+
+        for repo in repos:
+            user_id = repo.get("userId")
+
+            review_record = {
+                "userId": user_id,
+                "repo_name": repo_name,
+                "pr_number": pr_number,
+                "language": language,
+                "issues_found": len(diagnostics),
+                "ai_comment": ai_comment,
+                "analyzed_at": datetime.utcnow(),
+            }
+            reviews_collection.insert_one(review_record)
+            print(f"Saved analysis result for {repo_name} PR #{pr_number} to MongoDB.")
+
     except Exception as e:
         print(f"Failed to save analysis result to MongoDB: {e}")
 
