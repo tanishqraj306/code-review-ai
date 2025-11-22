@@ -298,7 +298,7 @@ def analyze_repository(repo_id, repo_name, clone_url):
         structure_text = "\n".join(file_structure)
 
         prompt = f"""
-        You are an expert technical writer. Please generate a concise, professional summary of the following software project.
+        You are an expert technical writer. Please generate a concise, and detailed professional summary of the following software project.
         
         Project Name: {repo_name}
         
@@ -308,10 +308,13 @@ def analyze_repository(repo_id, repo_name, clone_url):
         README Content (Excerpt):
         {readme_content}
         
-        Please provide:
-        1. A 2-sentence "Elevator Pitch" description.
-        2. The primary tech stack (languages, frameworks) detected.
-        3. Key features or modules inferred from the structure.
+        Please format the response in Markdown as follows:
+
+        1. **Summary:** Start directly with a 2-sentence "Elevator Pitch" describing the project. Do NOT use a header like "Elevator Pitch" or "Summary". Just write the text.
+        
+        2. **Tech Stack:** Use the header "### Tech Stack". List the primary languages and frameworks.
+        
+        3. **Key Features:** Use the header "### Key Features". Provide a bulleted list of 3-5 features inferred from the code structure. Bold the feature name (e.g. **Authentication:** Handles login...).
         """
 
         print("Asking Gemini for summary...")
