@@ -4,24 +4,38 @@ const { createClient } = require("redis");
 const axios = require("axios");
 const cookieParser = require("cookie-parser");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto"); // Required for signature verification
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- Configuration ---
 const MONGO_ATLAS_URI = process.env.MONGO_ATLAS_URI;
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const JWT_SECRET = process.env.JWT_SECRET;
 const REDIS_URL = process.env.REDIS_URL;
 const PUBLIC_URL = process.env.PUBLIC_URL || "http://localhost:5173";
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET; // Must add this to your .env file
 
 let db;
 let redisClient;
 
-app.use(express.json());
+// --- Middleware ---
+
+// 1. JSON Parser with Raw Body Capture (Needed for GitHub Signature Verification)
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
+
 app.use(cookieParser());
 
+// 2. Authentication Middleware
 const protectRoute = (req, res, next) => {
   const token = req.cookies.auth_token;
   if (!token) {
@@ -37,6 +51,33 @@ const protectRoute = (req, res, next) => {
   }
 };
 
+// 3. GitHub Webhook Signature Verification Middleware
+const verifyGithubSignature = (req, res, next) => {
+  const signature = req.headers["x-hub-signature-256"];
+
+  if (!WEBHOOK_SECRET) {
+    console.warn("⚠️ WEBHOOK_SECRET is not set in .env. Skipping verification (UNSAFE).");
+    return next();
+  }
+
+  if (!signature) {
+    console.warn("❌ Missing X-Hub-Signature-256 header.");
+    return res.status(401).send("No signature found.");
+  }
+
+  const hmac = crypto.createHmac("sha256", WEBHOOK_SECRET);
+  const digest = "sha256=" + hmac.update(req.rawBody).digest("hex");
+
+  if (crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+    return next();
+  } else {
+    console.error("❌ Invalid Webhook Signature.");
+    return res.status(401).send("Invalid signature.");
+  }
+};
+
+// --- Auth Routes ---
+
 app.get("/api/auth/github", (req, res) => {
   const redirectURI = `${PUBLIC_URL}/api/auth/callback`;
   const url = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=repo user:email&redirect_uri=${redirectURI}`;
@@ -46,9 +87,7 @@ app.get("/api/auth/github", (req, res) => {
 app.get("/api/auth/callback", async (req, res) => {
   const { code } = req.query;
 
-  if (!code) {
-    return res.status(400).send("Error: No code provided");
-  }
+  if (!code) return res.status(400).send("Error: No code provided");
 
   try {
     const tokenResponse = await axios.post(
@@ -58,13 +97,11 @@ app.get("/api/auth/callback", async (req, res) => {
         client_secret: GITHUB_CLIENT_SECRET,
         code,
       },
-      { headers: { Accept: "application/json" } },
+      { headers: { Accept: "application/json" } }
     );
 
     const accessToken = tokenResponse.data.access_token;
-    if (!accessToken) {
-      throw new Error("Failed to get access token");
-    }
+    if (!accessToken) throw new Error("Failed to get access token");
 
     const userResponse = await axios.get("https://api.github.com/user", {
       headers: { Authorization: `token ${accessToken}` },
@@ -79,26 +116,20 @@ app.get("/api/auth/callback", async (req, res) => {
       lastLogin: new Date(),
     };
 
-    const result = await db
-      .collection("users")
-      .findOneAndUpdate(
-        { githubId: githubUser.id },
-        { $set: userPayload },
-        { upsert: true, returnDocument: "after" },
-      );
+    const result = await db.collection("users").findOneAndUpdate(
+      { githubId: githubUser.id },
+      { $set: userPayload },
+      { upsert: true, returnDocument: "after" }
+    );
 
-    const user = result;
-
-    if (!user) {
-      throw new Error("Failed to find or create user in database.");
-    }
+    const user = result || result.value; // Handle difference in Mongo driver versions
 
     console.log(`User ${user.username} logged in.`);
 
     const sessionToken = jwt.sign(
       { userId: user._id, username: user.username },
       JWT_SECRET,
-      { expiresIn: "7d" },
+      { expiresIn: "7d" }
     );
 
     res.cookie("auth_token", sessionToken, {
@@ -110,21 +141,14 @@ app.get("/api/auth/callback", async (req, res) => {
 
     res.redirect(`${PUBLIC_URL}/dashboard`);
   } catch (error) {
-    console.error("!!! AUTHENTICATION FAILED !!!");
-    if (error.response) {
-      console.error("GitHub API Error:", error.response.data);
-    } else {
-      console.error("Auth Callback Error:", error.message);
-    }
+    console.error("Auth Callback Error:", error.message);
     res.status(500).send("Authentication failed");
   }
 });
 
 app.get("/api/auth/me", (req, res) => {
   const token = req.cookies.auth_token;
-  if (!token) {
-    return res.status(401).send({ message: "Not authenticated" });
-  }
+  if (!token) return res.status(401).send({ message: "Not authenticated" });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
     res.send({ userId: payload.userId, username: payload.username });
@@ -134,14 +158,11 @@ app.get("/api/auth/me", (req, res) => {
 });
 
 app.post("/api/auth/logout", (req, res) => {
-  res.cookie("auth_token", "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    expires: new Date(0),
-    path: "/",
-  });
+  res.clearCookie("auth_token");
   res.status(200).send({ message: "Logged out successfully" });
 });
+
+// --- Repository Routes ---
 
 app.get("/api/repositories", protectRoute, async (req, res) => {
   try {
@@ -151,75 +172,44 @@ app.get("/api/repositories", protectRoute, async (req, res) => {
       .toArray();
     res.status(200).send(repos);
   } catch (error) {
-    console.error("Failed to fetch repositories:", error);
     res.status(500).send({ message: "Internal Server Error" });
   }
 });
 
 app.post("/api/repositories", protectRoute, async (req, res) => {
   const { repo_url } = req.body;
-  if (!repo_url) {
-    return res.status(400).send({ message: "Repository URL is required." });
-  }
+  if (!repo_url) return res.status(400).send({ message: "Repository URL is required." });
 
   try {
     const urlParts = new URL(repo_url);
-
     let fullName = urlParts.pathname
       .replace(/^\//, "")
       .replace(/\/$/, "")
       .replace(/\.git$/, "");
 
-    console.log(`Checking for duplicate: ${fullName} (Case Insensitive)`);
-
+    // Check for duplicates
     const existingRepo = await db.collection("repositories").findOne({
       full_name: { $regex: new RegExp(`^${fullName}$`, "i") },
       userId: req.user.userId,
     });
 
-    if (existingRepo) {
-      console.log("Duplicate found in DB!");
-      return res
-        .status(409)
-        .send({ message: "You have already added this repository." });
-    }
+    if (existingRepo) return res.status(409).send({ message: "Repository already added." });
 
-    const userDoc = await db.collection("users").findOne({
-      _id: new ObjectId(req.user.userId),
-    });
-
-    if (!userDoc || !userDoc.accessToken) {
-      return res
-        .status(401)
-        .send({ message: "User GitHub token not found. Please log in again." });
-    }
+    // Validate Permissions via GitHub API
+    const userDoc = await db.collection("users").findOne({ _id: new ObjectId(req.user.userId) });
+    if (!userDoc?.accessToken) return res.status(401).send({ message: "GitHub token missing." });
 
     try {
-      const ghResponse = await axios.get(
-        `https://api.github.com/repos/${fullName}`,
-        {
-          headers: {
-            Authorization: `token ${userDoc.accessToken}`,
-            Accept: "application/vnd.github.v3+json",
-          },
-        },
-      );
-
+      const ghResponse = await axios.get(`https://api.github.com/repos/${fullName}`, {
+        headers: { Authorization: `token ${userDoc.accessToken}` },
+      });
+      
       const permissions = ghResponse.data.permissions;
-
       if (!permissions || (!permissions.admin && !permissions.push)) {
-        return res.status(403).send({
-          message:
-            "Permission denied. You must have admin or write access to the repository to add it.",
-        });
+        return res.status(403).send({ message: "You need admin or write access." });
       }
     } catch (ghError) {
-      if (ghError.response && ghError.response.status === 404) {
-        return res.status(404).send({
-          message:
-            "Repository not found on GitHub (or it is private and you lack access).",
-        });
-      }
+      if (ghError.response?.status === 404) return res.status(404).send({ message: "Repo not found or private." });
       throw ghError;
     }
 
@@ -233,129 +223,16 @@ app.post("/api/repositories", protectRoute, async (req, res) => {
     };
 
     await db.collection("repositories").insertOne(repository);
-
-    console.log(`User ${req.user.username} added repository: ${fullName}`);
-    res
-      .status(201)
-      .send({ message: "Repository added successfully.", data: repository });
+    res.status(201).send({ message: "Repository added successfully.", data: repository });
   } catch (error) {
-    console.error("Failed to add repository:", error.message);
-    res.status(500).send({ message: "Internal Server Error" });
-  }
-});
-
-app.get("/api/dashboard/stats", protectRoute, async (req, res) => {
-  try {
-    const totalRepos = await db.collection("repositories").countDocuments({
-      userId: req.user.userId,
-    });
-
-    const reviewStats = await db
-      .collection("reviews")
-      .aggregate([
-        { $match: { userId: req.user.userId } },
-        {
-          $group: {
-            _id: null,
-            totalReviews: { $sum: 1 },
-            totalIssues: { $sum: "$issues_found" },
-          },
-        },
-      ])
-      .toArray();
-
-    const stats = reviewStats[0] || { totalReviews: 0, totalIssues: 0 };
-
-    const chartDataRaw = await db
-      .collection("reviews")
-      .aggregate([
-        { $match: { userId: req.user.userId } },
-        {
-          $group: {
-            _id: {
-              $dateToString: { format: "%Y-%m-%d", date: "$analyzed_at" },
-            },
-            prs: { $sum: 1 },
-          },
-        },
-        { $sort: { _id: 1 } },
-        { $limit: 30 },
-      ])
-      .toArray();
-
-    const chartData = chartDataRaw.map((item) => ({
-      date: item._id,
-      prs: item.prs,
-    }));
-
-    res.send({
-      totalRepos,
-      totalReviews: stats.totalReviews,
-      totalIssues: stats.totalIssues,
-      linterErrors: Math.floor(stats.totalIssues * 0.8),
-      chartData,
-    });
-  } catch (error) {
-    console.error("Failed to fetch dashboard stats:", error);
-    res.status(500).send({ message: "Internal Server Error" });
-  }
-});
-
-app.get("/api/dashboard/reviews", protectRoute, async (req, res) => {
-  try {
-    const recentReviews = await db
-      .collection("reviews")
-      .find({ userId: req.user.userId })
-      .sort({ analyzed_at: -1 })
-      .limit(10)
-      .toArray();
-    res.send(recentReviews);
-  } catch (error) {
-    console.error("Failed to fetch recent reviews:", error);
-    res.status(500).send({ message: "Internal Server Error" });
-  }
-});
-
-app.get("/api/reviews", protectRoute, async (req, res) => {
-  try {
-    const reviews = await db
-      .collection("reviews")
-      .find({ userId: req.user.userId })
-      .sort({ analyzed_at: -1 })
-      .toArray();
-    res.send(reviews);
-  } catch (error) {
-    console.error("Failed to fetch review history:", error);
-    res.status(500).send({ message: "Internal Server Error" });
-  }
-});
-
-app.get("/api/reviews/:id", protectRoute, async (req, res) => {
-  const { id } = req.params;
-  try {
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ message: "Invalid review ID" });
-    }
-    const review = await db.collection("reviews").findOne({
-      _id: new ObjectId(id),
-      userId: req.user.userId,
-    });
-    if (!review) {
-      return res.status(404).send({ message: "Review not found" });
-    }
-    res.send(review);
-  } catch (error) {
-    console.error("Failed to fetch review details:", error);
+    console.error("Add Repo Error:", error.message);
     res.status(500).send({ message: "Internal Server Error" });
   }
 });
 
 app.get("/api/repositories/:id", protectRoute, async (req, res) => {
   const { id } = req.params;
-
-  if (!ObjectId.isValid(id)) {
-    return res.status(400).send({ message: "Invalid repository ID" });
-  }
+  if (!ObjectId.isValid(id)) return res.status(400).send({ message: "Invalid ID" });
 
   try {
     const repo = await db.collection("repositories").findOne({
@@ -363,54 +240,134 @@ app.get("/api/repositories/:id", protectRoute, async (req, res) => {
       userId: req.user.userId,
     });
 
-    if (!repo) {
-      return res.status(404).send({ message: "Repository not found" });
-    }
+    if (!repo) return res.status(404).send({ message: "Repository not found" });
 
     const reviews = await db
       .collection("reviews")
-      .find({
-        repo_name: repo.full_name,
-        userId: req.user.userId,
-      })
+      .find({ repo_name: repo.full_name, userId: req.user.userId })
       .sort({ analyzed_at: -1 })
       .toArray();
 
     res.send({ ...repo, reviews });
   } catch (error) {
-    console.error("Failed to fetch repository details:", error);
     res.status(500).send({ message: "Internal Server Error" });
   }
 });
 
-app.post("/api/webhook", async (req, res) => {
-  const githubEvent = req.headers["x-github-event"];
-  console.log(`Webhook received! Event type: ${githubEvent}`);
+app.delete("/api/repositories/:id", protectRoute, async (req, res) => {
+  const { id } = req.params;
+  if (!ObjectId.isValid(id)) return res.status(400).send({ message: "Invalid ID" });
 
-  if (githubEvent === "pull_request") {
+  try {
+    const result = await db.collection("repositories").deleteOne({
+      _id: new ObjectId(id),
+      userId: req.user.userId,
+    });
+
+    if (result.deletedCount === 0) return res.status(404).send({ message: "Repo not found." });
+    res.status(200).send({ message: "Repository deleted." });
+  } catch (error) {
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
+
+// --- Dashboard & Reviews Routes ---
+
+app.get("/api/dashboard/stats", protectRoute, async (req, res) => {
+  try {
+    const totalRepos = await db.collection("repositories").countDocuments({ userId: req.user.userId });
+    
+    const reviewStats = await db.collection("reviews").aggregate([
+        { $match: { userId: req.user.userId } },
+        { $group: { _id: null, totalReviews: { $sum: 1 }, totalIssues: { $sum: "$issues_found" } } },
+    ]).toArray();
+
+    const stats = reviewStats[0] || { totalReviews: 0, totalIssues: 0 };
+
+    const chartDataRaw = await db.collection("reviews").aggregate([
+        { $match: { userId: req.user.userId } },
+        { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$analyzed_at" } }, prs: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+        { $limit: 30 },
+    ]).toArray();
+
+    const chartData = chartDataRaw.map((item) => ({ date: item._id, prs: item.prs }));
+
+    res.send({
+      totalRepos,
+      totalReviews: stats.totalReviews,
+      totalIssues: stats.totalIssues,
+      chartData,
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
+
+app.get("/api/dashboard/reviews", protectRoute, async (req, res) => {
+  try {
+    const recentReviews = await db.collection("reviews")
+      .find({ userId: req.user.userId })
+      .sort({ analyzed_at: -1 })
+      .limit(10)
+      .toArray();
+    res.send(recentReviews);
+  } catch (error) {
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
+
+app.get("/api/reviews/:id", protectRoute, async (req, res) => {
+  const { id } = req.params;
+  if (!ObjectId.isValid(id)) return res.status(400).send({ message: "Invalid ID" });
+
+  try {
+    const review = await db.collection("reviews").findOne({
+      _id: new ObjectId(id),
+      userId: req.user.userId,
+    });
+    if (!review) return res.status(404).send({ message: "Review not found" });
+    res.send(review);
+  } catch (error) {
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
+
+// --- Webhook & Analysis Triggers ---
+
+// Secure Webhook Endpoint (Signature Verified)
+app.post("/api/webhook", verifyGithubSignature, async (req, res) => {
+  const githubEvent = req.headers["x-github-event"];
+  const action = req.body.action;
+
+  console.log(`Webhook Event: ${githubEvent} | Action: ${action}`);
+
+  if (githubEvent === "pull_request" && (action === "opened" || action === "synchronize")) {
     try {
       const jobData = {
         eventType: githubEvent,
         payload: req.body,
+        timestamp: Date.now(),
       };
+      
       await redisClient.lPush("pr_queue", JSON.stringify(jobData));
-      console.log("Job pushed to Redis queue.");
-      res.status(202).send("Accepted and queued for processing.");
+      console.log(`✅ Job queued for ${req.body.repository?.full_name}`);
+      res.status(202).send("Accepted and queued.");
     } catch (error) {
-      console.error("Failed to queue job:", error);
+      console.error("Queue Error:", error);
       res.status(500).send("Internal Server Error.");
     }
+  } else if (githubEvent === "ping") {
+    res.status(200).send("Pong!");
   } else {
-    res.status(200).send("Event received, but not processed.");
+    res.status(200).send("Event ignored.");
   }
 });
 
+// Manual Analysis Trigger (Dashboard Button)
 app.post("/api/repositories/:id/analyze", protectRoute, async (req, res) => {
   const { id } = req.params;
-
-  if (!ObjectId.isValid(id)) {
-    return res.status(400).send({ message: "Invalid repository ID" });
-  }
+  if (!ObjectId.isValid(id)) return res.status(400).send({ message: "Invalid ID" });
 
   try {
     const repo = await db.collection("repositories").findOne({
@@ -418,9 +375,7 @@ app.post("/api/repositories/:id/analyze", protectRoute, async (req, res) => {
       userId: req.user.userId,
     });
 
-    if (!repo) {
-      return res.status(404).send({ message: "Repository not found" });
-    }
+    if (!repo) return res.status(404).send({ message: "Repository not found" });
 
     const jobData = {
       eventType: "repository_analysis",
@@ -432,55 +387,29 @@ app.post("/api/repositories/:id/analyze", protectRoute, async (req, res) => {
     };
 
     await redisClient.lPush("pr_queue", JSON.stringify(jobData));
-
-    console.log(`Queued analysis for repo: ${repo.full_name}`);
-    res.status(202).send({ message: "Analysis started. Check back shortly." });
+    console.log(`Manual analysis queued for ${repo.full_name}`);
+    res.status(202).send({ message: "Analysis started." });
   } catch (error) {
-    console.error("Failed to queue analysis:", error);
     res.status(500).send({ message: "Internal Server Error" });
   }
 });
 
-app.delete("/api/repositories/:id", protectRoute, async (req, res) => {
-  const { id } = req.params;
-
-  if (!ObjectId.isValid(id)) {
-    return res.status(400).send({ message: "Invalid repository ID" });
-  }
-
-  try {
-    const result = await db.collection("repositories").deleteOne({
-      _id: new ObjectId(id),
-      userId: req.user.userId,
-    });
-
-    if (result.deletedCount === 0) {
-      return res
-        .status(404)
-        .send({ message: "Repository not found or access denied." });
-    }
-
-    res.status(200).send({ message: "Repository deleted successfully." });
-  } catch (error) {
-    console.error("Failed to delete repository:", error);
-    res.status(500).send({ message: "Internal Server Error" });
-  }
-});
+// --- Server Startup ---
 
 const startServer = async () => {
   try {
     redisClient = createClient({ url: REDIS_URL });
     redisClient.on("error", (err) => console.log("Redis Client Error", err));
     await redisClient.connect();
-    console.log("Successfully connected to Redis!");
+    console.log("✅ Successfully connected to Redis!");
 
     const mongoClient = new MongoClient(MONGO_ATLAS_URI);
     await mongoClient.connect();
     db = mongoClient.db("code-reviewer-ai-db");
-    console.log("Successfully connected to MongoDB Atlas!");
+    console.log("✅ Successfully connected to MongoDB Atlas!");
 
     app.listen(PORT, () => {
-      console.log(`Ingestion service listening on port ${PORT}`);
+      console.log(`🚀 Ingestion service listening on port ${PORT}`);
     });
   } catch (error) {
     console.error("Failed to connect to database or start server", error);
