@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y \
 RUN curl -fsSl https://deb.nodesource.com/setup_18.x | bash - \
   && apt-get install -y nodejs
 
+RUN npm install -g pyright
+
 RUN node -v && npm -v
 
 WORKDIR /app

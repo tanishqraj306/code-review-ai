@@ -3,7 +3,6 @@ PyGithub
 python-dotenv
 requests
 GitPython
-pyright
 unidiff
 google-generativeai
 pymongo

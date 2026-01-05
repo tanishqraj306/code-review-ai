@@ -16,8 +16,8 @@ from unidiff import PatchSet
 from datetime import datetime
 from bson.objectid import ObjectId
 
-# Configuration & Clients
 load_dotenv()
+
 GITHUB_PAT = os.getenv("GITHUB_PAT")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -26,14 +26,12 @@ PR_QUEUE_NAME = "pr_queue"
 CLONE_DIR = "/tmp/repos"
 
 gh_client = Github(GITHUB_PAT)
-print("Analysis worker started...")
 genai.configure(api_key=GEMINI_API_KEY)
-ai_model = genai.GenerativeModel("gemini-flash-latest")
+ai_model = genai.GenerativeModel("gemini-2.5-flash")
+print("Analysis worker started...")
 print("Successfully connected to Github and Google AI!")
 
-
-# Connect to MongoDB
-print("Connecting to MongoDB")
+print("Connecting to MongoDB...")
 mongo_client = MongoClient(MONGO_ATLAS_URI)
 db = mongo_client["code-reviewer-ai-db"]
 reviews_collection = db["reviews"]
@@ -87,110 +85,50 @@ def detect_language(changed_files):
         return "unknown"
 
     primary_language = max(language_counts, key=language_counts.get)
-    print(f"Detection complete: {language_counts}")
+    print(f"Detection complete: {primary_language}")
     return primary_language
 
 
-def install_python_dependencies(repo_path):
+def setup_virtual_env(repo_path):
     """
-    Recursively finds all 'requirements.txt' files and installs them.
+    Creates a dedicated virtual environment for the repository.
+    Returns the path to the python and pip executables inside the venv.
+    """
+    venv_path = os.path.join(repo_path, "venv")
+    if not os.path.exists(venv_path):
+        print(f"Creating virtual environment at {venv_path}...")
+        subprocess.run(["python", "-m", "venv", venv_path], check=True)
+    
+    bin_dir = os.path.join(venv_path, "bin")
+    return os.path.join(bin_dir, "python"), os.path.join(bin_dir, "pip")
+
+def install_python_dependencies(repo_path, pip_exe):
+    """
+    Installs requirements.txt using the ISOLATED venv pip executable.
     """
     print("Searching for Python dependencies...")
     found_requirements = False
     for root, _, files in os.walk(repo_path):
         if "requirements.txt" in files:
+            if "venv" in root:
+                continue
+
             requirements_file = os.path.join(root, "requirements.txt")
             print(f"Found dependencies file: {requirements_file}. Installing...")
             found_requirements = True
             try:
                 subprocess.run(
-                    ["pip", "install", "-r", requirements_file],
+                    [pip_exe, "install", "-r", requirements_file],
                     check=True,
                     capture_output=True,
                     text=True,
                 )
                 print(f"Successfully installed dependencies from {requirements_file}.")
             except subprocess.CalledProcessError as e:
-                print(
-                    f"Failed to install dependencies from {requirements_file}: {e.stderr}"
-                )
+                print(f"Failed to install dependencies: {e.stderr}")
 
     if not found_requirements:
-        print("No requirements.txt found anywhere in the repository.")
-
-
-def run_pyright_analysis(repo_path):
-    """Executes the Pyright language server on the given path"""
-    print("Starting Pyright analysis...")
-    try:
-        command = ["pyright", "--outputjson", repo_path]
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-
-        pyright_output = json.loads(result.stdout)
-        diagnostics = pyright_output.get("generalDiagnostics", [])
-
-        print(f"Pyright analysis complete. Found {len(diagnostics)} diagnostics.")
-        return diagnostics
-    except subprocess.CalledProcessError as e:
-        print(f"Pyright execution failed: {e}")
-        print(f"Stderr: {e.stderr}")
-        return []
-    except json.JSONDecodeError:
-        print("Failed to parse Pyright JSON output.")
-        return []
-
-
-def parse_clang_tidy_output(output_text, repo_path):
-    """Parses the raw text output of clang-tidy into our standard diagnostic format."""
-    diagnostics = []
-    pattern = re.compile(r"(.+?):(\d+):(\d+):\s+(warning|error):\s+(.+?)\s+\[(.+?)\]")
-
-    for line in output_text.splitlines():
-        match = pattern.match(line)
-        if match:
-            file_path, line_num, _, severity, message, rule = match.groups()
-
-            diagnostics.append(
-                {
-                    "file": os.path.join(repo_path, file_path),
-                    "range": {"start": {"line": int(line_num) - 1, "character": 0}},
-                    "message": message.strip(),
-                    "severity": severity.upper(),
-                    "rule": rule.strip(),
-                }
-            )
-    return diagnostics
-
-
-def run_clang_tidy_analysis(repo_path):
-    """Finds all C/C++ files in a project and runs clang-tidy on them."""
-    print("Starting clang-tidy analysis on the full project...")
-
-    search_path = os.path.join(repo_path, "**")
-    files_to_check = [
-        f
-        for ext in ("*.c", "*.cpp", "*.h", "*.hpp")
-        for f in glob.glob(os.path.join(search_path, ext), recursive=True)
-    ]
-
-    if not files_to_check:
-        print("No C/C++ files found to analyze.")
-        return []
-
-    print(f"Found {len(files_to_check)} C/C++ files to analyze.")
-    try:
-        command = ["clang-tidy"] + files_to_check
-        result = subprocess.run(command, capture_output=True, text=True)
-
-        print("Clang-tidy analysis complete. Parsing output...")
-        diagnostics = parse_clang_tidy_output(result.stdout, repo_path)
-        print(f"Parsed {len(diagnostics)} total diagnostics from clang-tidy.")
-        return diagnostics
-
-    except Exception as e:
-        print(f"Failed to run clang-tidy: {e}")
-        return []
-
+        print("No requirements.txt found. Skipping install.")
 
 def install_node_dependencies(repo_path):
     """Installs Node dependencies if package.json exists."""
@@ -199,7 +137,6 @@ def install_node_dependencies(repo_path):
 
     if os.path.exists(package_json):
         print("Found package.json. Installing dependencies...")
-
         try:
             subprocess.run(
                 ["npm", "install", "--ignore-scripts", "--legacy-peer-deps"],
@@ -215,372 +152,361 @@ def install_node_dependencies(repo_path):
         print("No package.json found. Skipping npm install.")
 
 
-def parse_eslint_output(json_output, repo_path):
-    """Parse ESLint JSON output info standard diagnostics."""
-    diagnostics = []
+def run_pyright_analysis(repo_path):
+    """Executes Pyright."""
+    print("Starting Pyright analysis...")
     try:
-        results = json.loads(json_output)
-        for file_result in results:
-            file_path = file_result.get("filePath", "")
-            for message in file_result.get("mesages", []):
-                diagnostics.append(
-                    {
-                        "file": file_path,
-                        "range": {
-                            "start": {
-                                "line": message.get("line", 1) - 1,
-                                "character": message.get("column", 1),
-                            }
-                        },
-                        "message": message.get("message"),
-                        "severity": "ERROR"
-                        if message.get("severity") == 2
-                        else "WARNING",
-                        "rule": message.get("ruleId", "unknown"),
-                    }
-                )
-    except json.JSONDecodeError:
-        print("Failed to parse ESLint JSON.")
+        command = ["pyright", "--outputjson", repo_path]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+
+        try:
+            pyright_output = json.loads(result.stdout)
+            diagnostics = pyright_output.get("generalDiagnostics", [])
+            print(f"Pyright analysis complete. Found {len(diagnostics)} diagnostics.")
+            return diagnostics
+        except json.JSONDecodeError:
+            print("Failed to parse Pyright JSON output.")
+            return []
+
+    except FileNotFoundError:
+        print("Pyright executable not found. Ensure it is installed in Dockerfile.")
+        return []
+
+def run_clang_tidy_analysis(repo_path):
+    """Finds C/C++ files and runs clang-tidy."""
+    print("Starting clang-tidy analysis...")
+    search_path = os.path.join(repo_path, "**")
+    files_to_check = [
+        f for ext in ("*.c", "*.cpp", "*.h", "*.hpp")
+        for f in glob.glob(os.path.join(search_path, ext), recursive=True)
+    ]
+
+    if not files_to_check:
+        return []
+
+    try:
+        command = ["clang-tidy"] + files_to_check
+        result = subprocess.run(command, capture_output=True, text=True)
+        return parse_clang_tidy_output(result.stdout, repo_path)
+    except Exception as e:
+        print(f"Failed to run clang-tidy: {e}")
+        return []
+
+def parse_clang_tidy_output(output_text, repo_path):
+    diagnostics = []
+    pattern = re.compile(r"(.+?):(\d+):(\d+):\s+(warning|error):\s+(.+?)\s+\[(.+?)\]")
+    for line in output_text.splitlines():
+        match = pattern.match(line)
+        if match:
+            file_path, line_num, _, severity, message, rule = match.groups()
+            diagnostics.append({
+                "file": os.path.join(repo_path, file_path) if not file_path.startswith("/") else file_path,
+                "range": {"start": {"line": int(line_num) - 1, "character": 0}},
+                "message": message.strip(),
+                "severity": severity.upper(),
+                "rule": rule.strip(),
+            })
     return diagnostics
 
-
 def run_eslint_analysis(repo_path):
-    """Runs ESLint on the repository."""
-
     print("Starting ESLint analysis...")
     try:
         command = ["npx", "eslint", ".", "--format", "json"]
-
-        result = subprocess.run(command, cwd=repo_path, capture_output=True, text=True)
+        result = subprocess.run(command, cwd=repo_path, capture_output=True, text=True, check=False)
 
         if result.stdout:
-            print("ESLint analysis complete. Parsing output...")
-            return parse_eslint_output(result.stdout, repo_path)
-        else:
-            print(f"ESLint produced no output. Stderr: {result.stderr}")
-            return []
-
+            try:
+                results = json.loads(result.stdout)
+                diagnostics = []
+                for file_result in results:
+                    file_path = file_result.get("filePath", "")
+                    for message in file_result.get("messages", []):
+                        diagnostics.append({
+                            "file": file_path,
+                            "range": {"start": {"line": message.get("line", 1) - 1, "character": message.get("column", 1)}},
+                            "message": message.get("message"),
+                            "severity": "ERROR" if message.get("severity") == 2 else "WARNING",
+                            "rule": message.get("ruleId", "unknown"),
+                        })
+                return diagnostics
+            except json.JSONDecodeError:
+                return []
+        return []
     except Exception as e:
         print(f"Failed to run ESLint: {e}")
         return []
 
 
-def analyze_repository(repo_id, repo_name, clone_url):
-    print(f"Starting repository analysis for {repo_name}...")
+def analyze_repository_summary(repo_id, repo_name, clone_url):
+    """Generates a summary for the repository (triggered manually or on first add)."""
+    print(f"Starting repository summary analysis for {repo_name}...")
     repo_path = os.path.join(CLONE_DIR, repo_name.replace("/", "_"), "analysis")
 
     try:
         auth_clone_url = clone_url.replace("https://", f"https://oauth2:{GITHUB_PAT}@")
         if os.path.exists(repo_path):
             shutil.rmtree(repo_path)
-
-        print(f"Cloning {repo_name}...")
+            
         git.Repo.clone_from(auth_clone_url, repo_path)
-
-        readme_content = "No README found."
+        
+        # Simple file structure extraction
         file_structure = []
-
-        for name in ["README.md", "readme.md", "README.txt"]:
-            p = os.path.join(repo_path, name)
-            if os.path.exists(p):
-                with open(p, "r", errors="ignore") as f:
-                    readme_content = f.read()[:5000]
-                break
+        readme_content = "No README found."
+        
+        if os.path.exists(os.path.join(repo_path, "README.md")):
+            with open(os.path.join(repo_path, "README.md"), "r", errors="ignore") as f:
+                readme_content = f.read()[:3000]
 
         for root, dirs, files in os.walk(repo_path):
+            if ".git" in root: continue
             level = root.replace(repo_path, "").count(os.sep)
             if level < 2:
                 indent = " " * 4 * level
                 file_structure.append(f"{indent}{os.path.basename(root)}/")
-                for f in files[:10]:
+                for f in files[:5]:
                     file_structure.append(f"{indent}    {f}")
 
-        structure_text = "\n".join(file_structure)
-
         prompt = f"""
-        You are an expert technical writer. Please generate a concise, and detailed professional summary of the following software project.
-        
-        Project Name: {repo_name}
-        
-        File Structure:
-        {structure_text}
-        
-        README Content (Excerpt):
+        Analyze this codebase and provide a summary.
+        Project: {repo_name}
+        Structure:
+        {chr(10).join(file_structure)}
+        README:
         {readme_content}
         
-        Please format the response in Markdown as follows:
-
-        1. **Summary:** Start directly with a 2-sentence "Elevator Pitch" describing the project. Do NOT use a header like "Elevator Pitch" or "Summary". Just write the text.
-        
-        2. **Tech Stack:** Use the header "### Tech Stack". List the primary languages and frameworks.
-        
-        3. **Key Features:** Use the header "### Key Features". Provide a bulleted list of 3-5 features inferred from the code structure. Bold the feature name (e.g. **Authentication:** Handles login...).
+        Return JSON format: {{ "summary": "...", "tech_stack": ["..."], "key_features": ["..."] }}
         """
-
-        print("Asking Gemini for summary...")
+        
         response = ai_model.generate_content(prompt)
-        ai_description = response.text
-
+        # Basic cleanup of response to ensure JSON
+        text = response.text.replace("```json", "").replace("```", "")
+        
         repositories_collection.update_one(
             {"_id": ObjectId(repo_id)},
-            {
-                "$set": {
-                    "ai_description": ai_description,
-                    "last_analyzed_at": datetime.utcnow(),
-                }
-            },
+            {"$set": {"ai_description": text, "last_analyzed_at": datetime.utcnow()}}
         )
-        print(f"Successfully updated repository description for {repo_name}")
+        print("Repository summary updated.")
     except Exception as e:
-        print(f"Repository analysis failed: {e}")
+        print(f"Repo summary failed: {e}")
     finally:
         if os.path.exists(repo_path):
             shutil.rmtree(repo_path)
 
-
 def format_comment_with_ai(diagnostics, diff_text):
-    """Uses an AI to format LSP diagnostic and review code for logic errors."""
-    print("Formatting comment with AI using full code context...")
+    """Uses AI to review the logic/security of the diff."""
+    print("Formatting AI review...")
 
-    diag_summary = "No specific type or syntax errors were found by the linter."
+    diag_summary = "No syntax errors found."
     if diagnostics:
-        diag_list = []
-        for diag in diagnostics:
-            message = diag.get("message", "No message provided.")
-            rule = diag.get("rule", "general")
-            diag_list.append(f"- Rule `{rule}`: {message}")
-        diag_summary = (
-            "A static analysis tool found the following specific issues:\n"
-            + "\n".join(diag_list)
+        diag_summary = "Linter Errors Found:\n" + "\n".join(
+            [f"- {d.get('file').split('/')[-1]}:{d['range']['start']['line']} : {d['message']}" for d in diagnostics[:5]]
         )
 
-    max_diff_length = 4000
-    if len(diff_text) > max_diff_length:
-        diff_text = diff_text[:max_diff_length] + "\n\n (diff truncated due to length)"
+    # Truncate diff to fit context window
+    diff_text = diff_text[:10000] 
 
     prompt = f"""
-    ou are an expert, friendly, and encouraging code reviewer bot. Your goal is to help developers improve their code.
-
-    A pull request was submitted with the following changes (in diff format):
-    --- CODE DIFF ---
-    {diff_text}
-    --- END CODE DIFF ---
-
+    You are a Senior Code Reviewer. Review this Pull Request.
+    
+    CONTEXT:
     {diag_summary}
-
-    Please provide a single, concise, and helpful review comment for the pull request. Your comment should:
-    1. Start with a positive and encouraging sentence.
-    2. If there were specific linter issues, briefly and gently explain them.
-    3. Review the provided code diff for potential logic errors, unclear code, performance improvements, or violations of best practices.
-    4. Phrase everything as a helpful suggestion, not a demand. Use a humble and collaborative tone.
-    5. Do not use markdown headers. Structure your feedback as a single, easy-to-read comment.
+    
+    CODE DIFF:
+    {diff_text}
+    
+    INSTRUCTIONS:
+    1. Ignore syntax errors (the linter handles those).
+    2. Focus on: Security Vulnerabilities, Logic Bugs, Performance Issues, and Code Readability.
+    3. Be kind, constructive, and concise.
+    4. Format your response in Markdown. Start with a header "## 🤖 AI Review Analysis".
     """
-
+    
     try:
         response = ai_model.generate_content(prompt)
         return response.text
-
     except Exception as e:
-        print(f"AI comment generation failed: {e}")
-        return "I found a few potential issues, but I had trouble summarizing them. Please check the logs for details."
-
+        print(f"AI Generation failed: {e}")
+        return "I encountered an error generating the AI review. Please check logs."
 
 def post_review_comment(pr, diagnostics, ai_comment, repo_path):
-    """Posts a single review comment to a pull request."""
-    if not ai_comment:
-        return
-
-    if diagnostics:
-        first_diag = diagnostics[0]
-        file_path = os.path.relpath(first_diag.get("file"), repo_path)
-        line_number = first_diag.get("range", {}).get("start", {}).get("line") + 1
-
-        print(f"Posting in-line comment to {file_path} at line {line_number}...")
+    """
+    1. Posts specific Linter errors as INLINE comments.
+    2. Posts the AI Analysis as a GENERAL comment.
+    """
+    latest_commit = pr.get_commits().reversed[0]
+    
+    # 1. Post Inline Linter Comments (Max 10 to avoid spam/rate limits)
+    posted_count = 0
+    for diag in diagnostics:
+        if posted_count >= 10:
+            break
+            
         try:
-            latest_commit = pr.get_commits().reversed[0]
+            file_path = os.path.relpath(diag.get("file"), repo_path)
+            line_number = diag.get("range", {}).get("start", {}).get("line") + 1
+            
+            body = f"**{diag['severity']}**: {diag['message']}\n*Rule: {diag['rule']}*"
+            
+            # Note: create_review_comment requires the 'path' to be relative to repo root
             pr.create_review_comment(
-                body=ai_comment,
+                body=body,
                 commit=latest_commit,
                 path=file_path,
-                line=line_number,
+                line=line_number
             )
-            print("Successfully posted in-line comment to Github.")
+            posted_count += 1
+            time.sleep(0.5) # Slight delay to be nice to GitHub API
         except Exception as e:
-            print(f"Failed to post in-line comment to Github: {e}")
-    else:
-        print("Posting general comment on the PR...")
+            print(f"Skipping inline comment (often due to line outside diff context): {e}")
+
+    # 2. Post General AI Comment
+    if ai_comment:
         try:
             pr.create_issue_comment(ai_comment)
-            print("Successfully posted general comment to Github.")
+            print("Posted AI General Review.")
         except Exception as e:
-            print(f"Failed to post general comment to Github: {e}")
-
+            print(f"Failed to post general comment: {e}")
 
 def save_analysis_result(repo_name, pr_number, diagnostics, ai_comment, language):
     try:
-        repos = list(db.repositories.find({"full_name": repo_name}))
+        # Find repo to get user_id (assuming one repo per user for simplicity, or adapt logic)
+        repo_doc = repositories_collection.find_one({"full_name": repo_name})
+        user_id = repo_doc.get("userId") if repo_doc else None
 
-        if not repos:
-            print(f"Warning: No users found monitoring {repo_name}. Review not saved.")
-            return
-
-        for repo in repos:
-            user_id = repo.get("userId")
-
-            review_record = {
-                "userId": user_id,
-                "repo_name": repo_name,
-                "pr_number": pr_number,
-                "language": language,
-                "issues_found": len(diagnostics),
-                "ai_comment": ai_comment,
-                "analyzed_at": datetime.utcnow(),
-            }
-            reviews_collection.insert_one(review_record)
-            print(f"Saved analysis result for {repo_name} PR #{pr_number} to MongoDB.")
-
+        review_record = {
+            "userId": user_id,
+            "repo_name": repo_name,
+            "pr_number": pr_number,
+            "language": language,
+            "issues_count": len(diagnostics),
+            "ai_comment": ai_comment,
+            "analyzed_at": datetime.utcnow(),
+        }
+        reviews_collection.insert_one(review_record)
+        print("Analysis saved to MongoDB.")
     except Exception as e:
-        print(f"Failed to save analysis result to MongoDB: {e}")
+        print(f"DB Save failed: {e}")
 
+# --- Main Worker Loop ---
 
 def main():
-    """Main worker loop to process jobs from the Redis queue."""
     redis_client = connect_to_redis()
-    print(f'Worker is listening for jobs on queue: "{PR_QUEUE_NAME}"')
+    print(f'Worker listening on "{PR_QUEUE_NAME}"...')
+    
     while True:
         repo_path = None
         try:
+            # Blocking pop
             _, job_json = redis_client.brpop(PR_QUEUE_NAME, 0)
             job_data = json.loads(job_json)
-
-            print("\n--- ✅ Job Received ---")
-
-            event_type = job_data.get("eventType")
-
-            if event_type == "repository_analysis":
+            
+            print(f"\n--- Job Received: {job_data.get('event_type', 'unknown')} ---")
+            
+            # Handle Manual Repo Analysis (Summary)
+            if job_data.get("event_type") == "repository_analysis":
                 payload = job_data.get("payload", {})
-                analyze_repository(
-                    payload.get("repo_id"),
-                    payload.get("repo_name"),
-                    payload.get("clone_url"),
+                analyze_repository_summary(
+                    payload.get("repo_id"), 
+                    payload.get("repo_name"), 
+                    payload.get("clone_url")
                 )
-                print("--- Repository Analysis Complete ---")
                 continue
-            if event_type == "pull_request":
-                if "payload" in job_data:
-                    payload = job_data["payload"]
-                else:
-                    payload = job_data
 
-                repo_data = payload.get("repository", [])
-                repo_name = repo_data.get("full_name")
-                clone_url = repo_data.get("clone_url")
+            # Handle Pull Requests
+            payload = job_data.get("payload", job_data) # Handle nested or flat payload
+            
+            # Basic Validation
+            if "repository" not in payload or "pull_request" not in payload:
+                # Support direct payload structure vs github webhook structure
+                repo_data = payload.get("repository", {})
                 pr_number = payload.get("number")
+            else:
+                # GitHub Webhook standard structure
+                repo_data = payload["repository"]
+                pr_number = payload["pull_request"]["number"]
 
-                if not all([repo_name, clone_url, pr_number]):
-                    print("Payload missing required data.")
-                    continue
+            repo_name = repo_data.get("full_name")
+            clone_url = repo_data.get("clone_url")
 
-                print(f"Processing PR #{pr_number} from {repo_name}")
+            if not repo_name or not pr_number:
+                print("Invalid Payload Structure.")
+                continue
 
-                repo = gh_client.get_repo(repo_name)
-                pr = repo.get_pull(pr_number)
+            print(f"Processing PR #{pr_number} for {repo_name}")
+            
+            # Github API Fetch
+            repo = gh_client.get_repo(repo_name)
+            pr = repo.get_pull(pr_number)
+            
+            # Get Diff
+            diff_response = requests.get(pr.diff_url)
+            diff_text = diff_response.text
+            added_lines_map = parse_diff_to_get_added_lines(diff_text)
+            changed_files = list(added_lines_map.keys())
+            
+            language = detect_language(changed_files)
+            
+            # Setup Paths
+            repo_path = os.path.join(CLONE_DIR, repo_name.replace("/", "_"), str(pr_number))
+            
+            # Clone
+            auth_clone_url = clone_url.replace("https://", f"https://oauth2:{GITHUB_PAT}@")
+            if os.path.exists(repo_path): shutil.rmtree(repo_path)
+            
+            git.Repo.clone_from(auth_clone_url, repo_path)
+            
+            # Checkout PR
+            repo_git = git.Git(repo_path)
+            repo_git.fetch("origin", f"pull/{pr_number}/head:pr-{pr_number}")
+            repo_git.checkout(f"pr-{pr_number}")
+            
+            # Run Analysis based on Language
+            relevant_diagnostics = []
+            
+            if language == "python":
+                # Create VENV and Install Deps
+                python_exe, pip_exe = setup_virtual_env(repo_path)
+                install_python_dependencies(repo_path, pip_exe)
+                
+                # Run Analysis
+                diagnostics = run_pyright_analysis(repo_path)
+                
+                # Filter results to changed lines only
+                for diag in diagnostics:
+                    fpath = diag.get("file", "")
+                    rel_path = os.path.relpath(fpath, repo_path)
+                    line = diag.get("range", {}).get("start", {}).get("line") + 1
+                    
+                    if rel_path in added_lines_map and line in added_lines_map[rel_path]:
+                        relevant_diagnostics.append(diag)
 
-                diff_response = requests.get(pr.diff_url)
-                diff_response.raise_for_status()
-                diff_text = diff_response.text
-                added_lines_map = parse_diff_to_get_added_lines(diff_response.text)
-                changed_files = list(added_lines_map.keys())
-
-                language = detect_language(changed_files)
-                print(f"Detected primary language of PR:{language}")
-
-                # Clone repo and install dependencies
-                repo_path = os.path.join(
-                    CLONE_DIR, repo_name.replace("/", "_"), str(pr_number)
-                )
-                auth_clone_url = clone_url.replace(
-                    "https://", f"https://oauth2:{GITHUB_PAT}@"
-                )
-                print(f"Cloning default branch of {repo_name}...")
-                cloned_repo = git.Repo.clone_from(auth_clone_url, repo_path)
-                pr_refspec = f"refs/pull/{pr_number}/head"
-                local_pr_branch = f"pr-{pr_number}"
-                print(f"Fetching PR refspec: {pr_refspec}...")
-                cloned_repo.git.fetch("origin", f"{pr_refspec}:{local_pr_branch}")
-                cloned_repo.git.checkout(local_pr_branch)
-                print(f"Successfully checked out code for PR #{pr_number}")
-
-                # Filter diagnostics and run LSP
-                relevant_diagnostics = []
-                if language == "python":
-                    install_python_dependencies(repo_path)
-                    diagnostics = run_pyright_analysis(repo_path)
-                    for diag in diagnostics:
-                        file_path = diag.get("file")
-                        if file_path.startswith(repo_path):
-                            relative_path = os.path.relpath(file_path, repo_path)
-                            start_line = (
-                                diag.get("range", {}).get("start", {}).get("line")
-                            )
-
-                            if relative_path in added_lines_map:
-                                if (start_line + 1) in added_lines_map[relative_path]:
-                                    relevant_diagnostics.append(diag)
-                elif language == "c":
-                    diagnostics = run_clang_tidy_analysis(repo_path)
-                    for diag in diagnostics:
-                        file_path = diag.get("file", "")
-                        if file_path.startswith(repo_path):
-                            relative_path = os.path.relpath(file_path, repo_path)
-                            start_line = (
-                                diag.get("range", {}).get("start", {}).get("line")
-                            )
-
-                            if relative_path in added_lines_map:
-                                if (start_line + 1) in added_lines_map[relative_path]:
-                                    relevant_diagnostics.append(diag)
-
-                elif language == "javascript":
-                    install_node_dependencies(repo_path)
-                    diagnostics = run_eslint_analysis(repo_path)
-
-                    for diag in diagnostics:
-                        file_path = diag.get("file", "")
-                        if file_path.startswith(repo_path):
-                            relative_path = os.path.relpath(file_path, repo_path)
-                            start_line = (
-                                diag.get("range", {}).get("start", {}).get("line")
-                            )
-                            if relative_path in added_lines_map:
-                                if (start_line + 1) in added_lines_map[relative_path]:
-                                    relevant_diagnostics.append(diag)
-
-                print(
-                    f"Found {len(relevant_diagnostics)} relevant diagnostics on new lines."
-                )
-
-                if relevant_diagnostics or diff_text:
-                    ai_comment = format_comment_with_ai(relevant_diagnostics, diff_text)
-                    post_review_comment(pr, relevant_diagnostics, ai_comment, repo_path)
-
-                    save_analysis_result(
-                        repo_name, pr_number, relevant_diagnostics, ai_comment, language
-                    )
-
-                print("--- Job Complete ---\n")
+            elif language == "javascript":
+                install_node_dependencies(repo_path)
+                diagnostics = run_eslint_analysis(repo_path)
+                for diag in diagnostics:
+                    fpath = diag.get("file", "")
+                    rel_path = os.path.relpath(fpath, repo_path) if fpath.startswith("/") else fpath
+                    line = diag.get("range", {}).get("start", {}).get("line") + 1
+                    
+                    if rel_path in added_lines_map and line in added_lines_map[rel_path]:
+                        relevant_diagnostics.append(diag)
+            
+            # Post Results
+            print(f"Found {len(relevant_diagnostics)} relevant linter issues.")
+            
+            ai_comment = format_comment_with_ai(relevant_diagnostics, diff_text)
+            post_review_comment(pr, relevant_diagnostics, ai_comment, repo_path)
+            save_analysis_result(repo_name, pr_number, relevant_diagnostics, ai_comment, language)
+            
+            print("--- Job Complete ---")
 
         except Exception as e:
-            print(f"An error occurred: {e}")
-            time.sleep(5)
-            if not redis_client.ping():
-                print("Redis connection lost. Reconnecting...")
-                redis_client = connect_to_redis()
+            print(f"Critical Worker Error: {e}")
+            time.sleep(1) # Prevent tight loop on error
         finally:
             if repo_path and os.path.exists(repo_path):
-                print(f"Cleaning up directory: {repo_path}")
+                print("Cleaning up...")
                 shutil.rmtree(repo_path)
-
 
 if __name__ == "__main__":
     main()
