@@ -1,40 +1,62 @@
+version: '3.8'
+
 services:
+  # --- Service A: Ingestion (Backend API) ---
   ingestion-service:
     build: ./ingestion-service
+    container_name: ingestion_service
     restart: always
     env_file: .env
     depends_on:
       - redis
+    # We don't expose ports 3000:3000 here because the Frontend (Nginx) 
+    # will talk to this container internally via Docker network.
 
+  # --- Service C: Analysis Worker (Python) ---
   analysis-service:
     build: ./analysis-service
+    container_name: analysis_worker
     restart: always
     env_file: .env
     depends_on:
       - redis
 
+  # --- Service B: Orchestrator (Scheduler) ---
   orchestrator-service:
     build: ./orchestrator-service
+    container_name: orchestrator
     restart: always
     env_file: .env
     depends_on:
       - redis
 
+  # --- Database: Redis (Queue) ---
   redis:
     image: "redis:alpine"
+    container_name: redis_queue
     restart: always
+    volumes:
+      - redis_data:/data # <--- CRITICAL: Persists queue data
 
+  # --- Frontend (React + Nginx) ---
   frontend-service:
     build:
       context: ./frontend-service
       dockerfile: Dockerfile.prod
+    container_name: frontend_ui
     restart: always
     depends_on:
       - ingestion-service
+    # Cloudflare Tunnel will point to http://frontend-service:80
 
+  # --- Public Access: Cloudflare Tunnel ---
   tunnel:
     image: cloudflare/cloudflared:latest
+    container_name: cloudflare_tunnel
     restart: always
     command: tunnel run
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+
+volumes:
+  redis_data:
